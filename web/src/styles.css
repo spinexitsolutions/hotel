@@ -1,0 +1,128 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Defaults (Midnight & Champagne) — replaced at runtime by the published theme. */
+:root {
+  --c-primary: 200 169 106;
+  --c-primary-contrast: 20 18 15;
+  --c-secondary: 14 14 16;
+  --c-background: 250 247 240;
+  --c-surface: 241 233 219;
+  --c-text: 28 26 23;
+  --c-muted: 111 103 92;
+  --c-border: 227 216 196;
+  --font-heading: 'Cormorant Garamond';
+  --font-body: 'Jost';
+  --heading-weight: 400;
+  --heading-case: none;
+  --heading-tracking: -0.01em;
+  --radius: 0px;
+  --space: 1.25;
+  --btn-case: uppercase;
+  --header-h: 84px;
+}
+
+@layer base {
+  html { -webkit-text-size-adjust: 100%; scroll-padding-top: calc(var(--header-h) + 16px); }
+  html.lenis, html.lenis body { height: auto; }
+  .lenis.lenis-smooth { scroll-behavior: auto !important; }
+  body {
+    @apply bg-canvas font-sans text-fg antialiased;
+    font-weight: 300;
+    line-height: 1.7;
+    overflow-x: hidden;
+    text-rendering: optimizeLegibility;
+  }
+  h1, h2, h3, h4, .font-display {
+    font-family: var(--font-heading), Georgia, serif;
+    font-weight: var(--heading-weight);
+    text-transform: var(--heading-case);
+    letter-spacing: var(--heading-tracking);
+    line-height: 1.08;
+  }
+  ::selection { background: rgb(var(--c-primary) / 0.35); }
+  :focus-visible { outline: 2px solid rgb(var(--c-primary)); outline-offset: 3px; }
+  img { content-visibility: auto; }
+}
+
+@layer components {
+  .container-luxe { @apply mx-auto w-full max-w-[1360px] px-5 sm:px-8 lg:px-12; }
+  .eyebrow { @apply text-[0.7rem] font-medium uppercase tracking-luxe text-primary; }
+  .h-display { @apply font-display text-[2.6rem] leading-[1.02] sm:text-6xl lg:text-7xl xl:text-[5.5rem]; }
+  .h-section { @apply font-display text-[2.1rem] leading-[1.08] sm:text-5xl lg:text-[3.5rem]; }
+  .h-card { @apply font-display text-2xl leading-tight sm:text-[1.75rem]; }
+  .prose-luxe { @apply text-[1.02rem] leading-[1.85] text-fg/80; }
+  .prose-luxe p { @apply mb-5; }
+  .prose-luxe h2 { @apply mb-4 mt-10 text-3xl text-fg; }
+  .prose-luxe h3 { @apply mb-3 mt-8 text-2xl text-fg; }
+  .prose-luxe ul { @apply mb-6 list-disc space-y-2 pl-5; }
+  .prose-luxe ol { @apply mb-6 list-decimal space-y-2 pl-5; }
+  .prose-luxe a { @apply text-fg underline decoration-primary underline-offset-4 hover:decoration-2; }
+  .prose-luxe strong { @apply font-medium text-fg; }
+
+  /* Buttons respect the admin's button style (solid / outline / minimal) and case. */
+  .btn {
+    @apply relative inline-flex min-h-[48px] items-center justify-center gap-2 overflow-hidden px-7 py-3 text-[0.72rem] font-medium tracking-[0.2em] transition-all duration-500 ease-luxe disabled:cursor-not-allowed disabled:opacity-50;
+    border-radius: var(--radius);
+    text-transform: var(--btn-case);
+  }
+  .btn-primary { @apply bg-primary text-primary-contrast hover:brightness-110; }
+  [data-button='outline'] .btn-primary { @apply border border-primary bg-transparent text-fg hover:bg-primary hover:text-primary-contrast; }
+  [data-button='minimal'] .btn-primary { @apply min-h-0 border-b border-primary bg-transparent px-0 pb-1 text-fg hover:text-primary; border-radius: 0; }
+  .btn-dark { @apply bg-ink text-canvas hover:bg-ink/90; }
+  .btn-ghost { @apply border border-current bg-transparent hover:bg-fg/5; }
+  .btn-light { @apply border border-white/70 bg-transparent text-white hover:bg-white hover:text-ink; }
+  .btn-link { @apply min-h-0 px-0 py-1 tracking-[0.2em] underline decoration-primary decoration-1 underline-offset-[6px] hover:decoration-2; }
+  .btn-sm { @apply min-h-[38px] px-4 py-2 text-[0.68rem]; }
+
+  .card-luxe { @apply border border-line bg-canvas; border-radius: var(--radius); }
+  .input-luxe {
+    @apply block w-full border border-line bg-white/70 px-4 py-3 text-[0.95rem] text-fg placeholder:text-muted/70 transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/25 disabled:opacity-60;
+    border-radius: var(--radius);
+  }
+  .label-luxe { @apply mb-1.5 block text-[0.68rem] font-medium uppercase tracking-[0.18em] text-muted; }
+  .divider-ornament { @apply mx-auto my-6 flex items-center justify-center gap-3 text-primary; }
+  .divider-ornament::before, .divider-ornament::after { content: ''; @apply h-px w-12 bg-primary/60; }
+
+  .tone-light { @apply bg-canvas text-fg; }
+  .tone-surface { @apply bg-surface text-fg; }
+  .tone-dark { @apply bg-ink text-canvas; }
+  .tone-dark .text-muted { color: rgb(var(--c-background) / 0.65); }
+  .tone-dark .border-line { border-color: rgb(var(--c-background) / 0.15); }
+  .tone-dark .prose-luxe { color: rgb(var(--c-background) / 0.78); }
+  .tone-dark .prose-luxe strong, .tone-dark .prose-luxe a { color: rgb(var(--c-background)); }
+  .tone-dark .input-luxe { @apply border-white/20 bg-white/5 text-canvas placeholder:text-canvas/40; }
+
+  .img-zoom { @apply transition-transform duration-[1400ms] ease-luxe; }
+  .group:hover .img-zoom { transform: scale(1.06); }
+
+  .skeleton { @apply animate-pulse bg-line/50; border-radius: var(--radius); }
+  .scrollbar-none { scrollbar-width: none; }
+  .scrollbar-none::-webkit-scrollbar { display: none; }
+
+  /* Admin */
+  .admin-card { @apply rounded-xl border border-zinc-200 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)]; }
+  .admin-input { @apply block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 disabled:bg-zinc-50; }
+  .admin-label { @apply mb-1 block text-xs font-medium text-zinc-600; }
+  .admin-btn { @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50; }
+  .admin-btn-primary { @apply admin-btn bg-zinc-900 text-white hover:bg-zinc-700; }
+  .admin-btn-secondary { @apply admin-btn border border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-50; }
+  .admin-btn-danger { @apply admin-btn bg-red-600 text-white hover:bg-red-700; }
+  .admin-btn-ghost { @apply admin-btn text-zinc-700 hover:bg-zinc-100; }
+  .admin-table { @apply w-full text-left text-sm; }
+  .admin-table th { @apply whitespace-nowrap border-b border-zinc-200 bg-zinc-50 px-3 py-2.5 text-xs font-medium uppercase tracking-wide text-zinc-500; }
+  .admin-table td { @apply border-b border-zinc-100 px-3 py-2.5 align-middle text-zinc-800; }
+  .admin-table tbody tr:hover td { @apply bg-zinc-50/70; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
+
+/* Print: booking confirmations, invoices, reports */
+@media print {
+  .no-print { display: none !important; }
+  body { background: white !important; }
+  .print-area { box-shadow: none !important; border: none !important; }
+}
