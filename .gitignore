@@ -10,4 +10,4 @@ playwright-report/
 *.log
 .vite/
 *.tsbuildinfo
-tests/.uploads/
+server/tests/.uploads/
