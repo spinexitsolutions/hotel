@@ -1,7 +1,7 @@
 import { PrismaClient, Prisma } from '@prisma/client';
-import { isProd } from './env';
+import { isProd, isTest } from './env';
 
-export const prisma = new PrismaClient({ log: isProd ? ['error'] : ['error', 'warn'] });
+export const prisma = new PrismaClient({ log: isTest ? [] : isProd ? ['error'] : ['error', 'warn'] });
 
 export type Tx = Prisma.TransactionClient;
 export type Db = PrismaClient | Tx;
