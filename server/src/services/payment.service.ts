@@ -1,4 +1,5 @@
 import type { Request } from 'express';
+import { formatMoney } from '@aurelle/shared';
 import { Prisma, prisma } from '../config/prisma';
 import { logger } from '../config/logger';
 import { AppError } from '../utils/http';
@@ -83,7 +84,7 @@ export async function capturePayment(providerOrderId: string, providerPaymentId:
           where: { id: b.id },
           data: {
             amountPaid, paymentStatus, status, holdExpiresAt: null, confirmedAt: status === 'CONFIRMED' ? new Date() : null,
-            events: { create: { type: 'PAYMENT', message: `Online payment of ₹${(payment.amount / 100).toLocaleString('en-IN')} captured (${payment.provider}${payment.isTest ? ', TEST MODE' : ''}).` } },
+            events: { create: { type: 'PAYMENT', message: `Online payment of ${formatMoney(payment.amount)} captured (${payment.provider}${payment.isTest ? ', TEST MODE' : ''}).` } },
           },
         });
         return { alreadyProcessed: false, bookingId: b.id, status };
@@ -99,7 +100,7 @@ export async function capturePayment(providerOrderId: string, providerPaymentId:
     }
 
     // Payment toward an already-active booking (e.g. balance): just record it.
-    await tx.booking.update({ where: { id: b.id }, data: { amountPaid, paymentStatus, events: { create: { type: 'PAYMENT', message: `Payment of ₹${(payment.amount / 100).toLocaleString('en-IN')} captured.` } } } });
+    await tx.booking.update({ where: { id: b.id }, data: { amountPaid, paymentStatus, events: { create: { type: 'PAYMENT', message: `Payment of ${formatMoney(payment.amount)} captured.` } } } });
     return { alreadyProcessed: false, bookingId: b.id, status: b.status };
   }, { timeout: 20_000 }).catch((err) => {
     if (isOverlapViolation(err)) throw AppError.conflict('Rooms are no longer available.');
@@ -193,7 +194,7 @@ async function syncRefundStatus(bookingId: string) {
 export async function refundBooking(bookingId: string, input: { amount: number; reason: string; paymentId?: string }, req: Request) {
   const b = await prisma.booking.findUniqueOrThrow({ where: { id: bookingId }, include: { payments: { where: { status: { in: ['CAPTURED', 'PARTIALLY_REFUNDED'] } }, orderBy: { capturedAt: 'asc' } } } });
   const refundableTotal = b.amountPaid - b.amountRefunded;
-  if (input.amount > refundableTotal) throw AppError.badRequest(`Refund exceeds the amount paid (₹${(refundableTotal / 100).toLocaleString('en-IN')} available).`, 'REFUND_TOO_LARGE');
+  if (input.amount > refundableTotal) throw AppError.badRequest(`Refund exceeds the amount paid (${formatMoney(refundableTotal)} available).`, 'REFUND_TOO_LARGE');
 
   const candidates = input.paymentId ? b.payments.filter((p) => p.id === input.paymentId) : b.payments;
   let remaining = input.amount;
@@ -230,7 +231,7 @@ export async function refundBooking(bookingId: string, input: { amount: number; 
           amountRefunded,
           refundableAmount: Math.max(0, cur.refundableAmount - amount),
           paymentStatus: amountRefunded >= cur.amountPaid ? 'REFUNDED' : 'PARTIALLY_REFUNDED',
-          events: { create: { type: 'REFUND', message: `Refund of ₹${(amount / 100).toLocaleString('en-IN')} ${status === 'PROCESSED' ? 'issued' : 'initiated'} (${p.provider}). ${input.reason}`, actorId: req.user?.id } },
+          events: { create: { type: 'REFUND', message: `Refund of ${formatMoney(amount)} ${status === 'PROCESSED' ? 'issued' : 'initiated'} (${p.provider}). ${input.reason}`, actorId: req.user?.id } },
         },
       });
     });

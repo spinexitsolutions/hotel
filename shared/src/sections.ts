@@ -261,7 +261,7 @@ export type PageContent = { sections: Section[]; seo: z.infer<typeof pageSeoSche
 
 /** Lenient schema for drafts: sections are shape-checked but props may be incomplete. */
 export const pageDraftSchema = z.object({
-  sections: z.array(z.object({ id: z.string().min(1).max(60), type: z.enum(SECTION_TYPES as [SectionType, ...SectionType[]]), enabled: z.boolean(), props: z.record(z.unknown()) })).max(40),
+  sections: z.array(z.object({ id: z.string().min(1).max(60), type: z.enum(SECTION_TYPES as [SectionType, ...SectionType[]]), enabled: z.boolean().default(true), props: z.record(z.unknown()) })).max(40),
   seo: pageSeoSchema,
 });
 

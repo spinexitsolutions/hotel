@@ -185,18 +185,18 @@ export default function AdminApp() {
   );
 
   return (
-    <div className="min-h-screen bg-zinc-50 text-zinc-900" style={{ fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif', fontWeight: 400, lineHeight: 1.5 }}>
+    <div className="admin-root min-h-screen bg-zinc-50 text-zinc-900" style={{ fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif', fontWeight: 400, lineHeight: 1.5 }}>
       <title>Admin · The Aurelle</title>
       <meta name="robots" content="noindex, nofollow" />
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-60 bg-zinc-950 lg:block">{sidebar}</aside>
+      <aside className="no-print fixed inset-y-0 left-0 z-40 hidden w-60 bg-zinc-950 lg:block">{sidebar}</aside>
       {mobileNav && (
         <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true">
           <div className="absolute inset-0 bg-black/50" onClick={() => setMobileNav(false)} />
           <aside className="absolute inset-y-0 left-0 w-64 bg-zinc-950">{sidebar}<button className="absolute right-3 top-4 text-zinc-400" onClick={() => setMobileNav(false)} aria-label="Close menu"><X className="h-5 w-5" /></button></aside>
         </div>
       )}
-      <div className="lg:pl-60">
-        <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-4 border-b border-zinc-200 bg-white/90 px-4 backdrop-blur sm:px-6">
+      <div className="lg:pl-60 print:pl-0">
+        <header className="no-print sticky top-0 z-30 flex h-16 items-center justify-between gap-4 border-b border-zinc-200 bg-white/90 px-4 backdrop-blur sm:px-6">
           <button className="rounded-lg p-2 text-zinc-600 hover:bg-zinc-100 lg:hidden" onClick={() => setMobileNav(true)} aria-label="Open menu"><Menu className="h-5 w-5" /></button>
           <div className="flex-1" />
           <Notifications />

@@ -1,5 +1,5 @@
 import {
-  BOOKING_STATUS_LABEL, BOOKING_TRANSITIONS, addDays, cancellationOutcome, diffDays, makeBookingReference, todayInZone,
+  formatMoney, BOOKING_STATUS_LABEL, BOOKING_TRANSITIONS, addDays, cancellationOutcome, diffDays, makeBookingReference, todayInZone,
   type BookingSettings, type BookingStatus, type CreateBookingInput,
 } from '@aurelle/shared';
 import type { Request } from 'express';
@@ -344,7 +344,7 @@ export async function cancelBooking(
     });
   }
   if (opts.by === 'GUEST') {
-    queueEmail(() => staffAlert(`Reservation ${result.booking.reference} cancelled by guest`, [result.outcome.refundable > 0 ? `Refund due: ₹${(result.outcome.refundable / 100).toLocaleString('en-IN')}` : 'No refund due'], bookingId));
+    queueEmail(() => staffAlert(`Reservation ${result.booking.reference} cancelled by guest`, [result.outcome.refundable > 0 ? `Refund due: ${formatMoney(result.outcome.refundable)}` : 'No refund due'], bookingId));
   }
   return result;
 }
@@ -477,7 +477,7 @@ export async function recordOfflinePayment(bookingId: string, input: { amount: n
     const cur = await tx.booking.findUniqueOrThrow({ where: { id: bookingId } });
     if (['CANCELLED', 'REJECTED', 'EXPIRED'].includes(cur.status)) throw AppError.conflict('Cannot record a payment against an inactive reservation.');
     const balance = cur.grandTotal - (cur.amountPaid - cur.amountRefunded);
-    if (input.amount > balance) throw AppError.badRequest(`Amount exceeds the balance due (₹${(balance / 100).toLocaleString('en-IN')}).`, 'OVERPAYMENT');
+    if (input.amount > balance) throw AppError.badRequest(`Amount exceeds the balance due (${formatMoney(balance)}).`, 'OVERPAYMENT');
     await tx.payment.create({ data: { bookingId, provider: input.method, amount: input.amount, status: 'CAPTURED', method: input.method, reference: input.reference, recordedById: req.user?.id, capturedAt: new Date() } });
     const amountPaid = cur.amountPaid + input.amount;
     const paidNet = amountPaid - cur.amountRefunded;
@@ -487,7 +487,7 @@ export async function recordOfflinePayment(bookingId: string, input: { amount: n
         amountPaid,
         paymentStatus: paidNet >= cur.grandTotal ? 'PAID' : 'PARTIALLY_PAID',
         ...(cur.status === 'PENDING_PAYMENT' ? { status: settings.autoConfirmPaid ? 'CONFIRMED' : 'PENDING', holdExpiresAt: null, confirmedAt: settings.autoConfirmPaid ? new Date() : null } : {}),
-        events: { create: { type: 'PAYMENT', message: `Recorded ${input.method.replace(/_/g, ' ').toLowerCase()} payment of ₹${(input.amount / 100).toLocaleString('en-IN')}.`, actorId: req.user?.id } },
+        events: { create: { type: 'PAYMENT', message: `Recorded ${input.method.replace(/_/g, ' ').toLowerCase()} payment of ${formatMoney(input.amount)}.`, actorId: req.user?.id } },
       },
     });
   }, TX_OPTS);

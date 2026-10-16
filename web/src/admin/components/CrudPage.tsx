@@ -113,10 +113,19 @@ export function FormGrid({ fields, values, setValue, errors }: { fields: FieldSp
   );
 }
 
-export function CrudPage<T extends { id: string }>({ title, description, endpoint, fields, columns, defaults, itemLabel = 'item', searchable = true, canEdit = true, extraActions, rowActions, filters }: {
+export function CrudPage<T extends { id: string }>({ title, description, endpoint, fields, columns, defaults, itemLabel = 'item', searchable = true, canEdit = true, extraActions, rowActions, filters, mapRow, mapBody, embedded, formIntro }: {
   title: string; description?: string; endpoint: string; fields: FieldSpec[]; columns: Column<T>[]; defaults: Record<string, unknown>; itemLabel?: string;
   searchable?: boolean; canEdit?: boolean; extraActions?: ReactNode; rowActions?: (row: T) => ReactNode; filters?: Record<string, unknown>;
+  /** Optional: reshape an API row (or the defaults) before it is converted into form values. */
+  mapRow?: (row: Record<string, unknown>) => Record<string, unknown>;
+  /** Optional: reshape the converted request body (e.g. merge kind-dependent fields) before saving. */
+  mapBody?: (body: Record<string, unknown>, form: Record<string, unknown>) => Record<string, unknown>;
+  /** Optional: render a compact section header (h2) instead of the page-level header, for use inside tabs. */
+  embedded?: boolean;
+  /** Optional: content shown above the form fields in the editor dialog. */
+  formIntro?: ReactNode;
 }) {
+  const openForm = (row: Record<string, unknown>) => toForm(fields, mapRow ? mapRow(row) : row);
   const qc = useQueryClient();
   const toast = useToast();
   const { confirm, dialog } = useConfirm();
@@ -130,7 +139,8 @@ export function CrudPage<T extends { id: string }>({ title, description, endpoin
 
   const save = useMutation({
     mutationFn: (form: Record<string, unknown>) => {
-      const body = toBody(fields, form);
+      const raw = toBody(fields, form);
+      const body = mapBody ? mapBody(raw, form) : raw;
       return form.id ? put(`/admin${endpoint}/${form.id}`, body) : post(`/admin${endpoint}`, body);
     },
     onSuccess: () => { toast.success(`${itemLabel[0].toUpperCase()}${itemLabel.slice(1)} saved`); setEditing(null); void qc.invalidateQueries({ queryKey: ['admin', endpoint] }); },
@@ -147,11 +157,22 @@ export function CrudPage<T extends { id: string }>({ title, description, endpoin
 
   return (
     <div>
-      <PageHeader title={title} description={description} actions={<>{extraActions}{canEdit && <button className="admin-btn-primary" onClick={() => { setErrors({}); setEditing(toForm(fields, defaults)); }}><Plus className="h-4 w-4" /> New {itemLabel}</button>}</>} />
+      {(() => {
+        const actions = <>{extraActions}{canEdit && <button className="admin-btn-primary" onClick={() => { setErrors({}); setEditing(openForm(defaults)); }}><Plus className="h-4 w-4" /> New {itemLabel}</button>}</>;
+        return embedded ? (
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-zinc-900">{title}</h2>
+              {description && <p className="mt-0.5 max-w-3xl text-sm text-zinc-500">{description}</p>}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">{actions}</div>
+          </div>
+        ) : <PageHeader title={title} description={description} actions={actions} />;
+      })()}
       <Card bodyClassName="p-0">
         {searchable && <div className="border-b border-zinc-100 p-3"><SearchBox value={q} onChange={setQ} /></div>}
         {isLoading ? <Loading /> : error ? <div className="p-4"><ErrorBox error={error} onRetry={() => refetch()} /></div> : !data?.items.length ? (
-          <Empty title={`No ${itemLabel}s yet`} action={canEdit && <button className="admin-btn-primary" onClick={() => setEditing(toForm(fields, defaults))}><Plus className="h-4 w-4" /> Create the first one</button>} />
+          <Empty title={`No ${itemLabel}s yet`} action={canEdit && <button className="admin-btn-primary" onClick={() => setEditing(openForm(defaults))}><Plus className="h-4 w-4" /> Create the first one</button>} />
         ) : (
           <div className="overflow-x-auto">
             <table className="admin-table">
@@ -163,7 +184,7 @@ export function CrudPage<T extends { id: string }>({ title, description, endpoin
                     {canEdit && (
                       <td className="whitespace-nowrap text-right">
                         {rowActions?.(row)}
-                        <button className="admin-btn-ghost !p-1.5" onClick={() => { setErrors({}); setEditing(toForm(fields, row as Record<string, unknown>)); }} aria-label="Edit"><Pencil className="h-4 w-4" /></button>
+                        <button className="admin-btn-ghost !p-1.5" onClick={() => { setErrors({}); setEditing(openForm(row as Record<string, unknown>)); }} aria-label="Edit"><Pencil className="h-4 w-4" /></button>
                         <button className="admin-btn-ghost !p-1.5 text-red-600" aria-label="Delete" onClick={async () => { if (await confirm({ title: `Delete this ${itemLabel}?`, body: 'This cannot be undone.', confirmLabel: 'Delete', danger: true })) remove.mutate(row.id); }}><Trash2 className="h-4 w-4" /></button>
                       </td>
                     )}
@@ -178,6 +199,7 @@ export function CrudPage<T extends { id: string }>({ title, description, endpoin
       {editing && (
         <Dialog open onOpenChange={(o) => !o && setEditing(null)} title={editing.id ? `Edit ${itemLabel}` : `New ${itemLabel}`} wide
           footer={<><button className="admin-btn-secondary" onClick={() => setEditing(null)}>Cancel</button><button className="admin-btn-primary" disabled={save.isPending} onClick={() => save.mutate(editing)}>{save.isPending ? 'Saving…' : 'Save'}</button></>}>
+          {formIntro && <div className="mb-4">{formIntro}</div>}
           <FormGrid fields={fields} values={editing} setValue={(k, v) => setEditing((s) => ({ ...s!, [k]: v }))} errors={errors} />
         </Dialog>
       )}

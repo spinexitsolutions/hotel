@@ -74,7 +74,7 @@ export function MediaPickerDialog({ open, onOpenChange, onPick }: { open: boolea
 }
 
 /** Image input with preview: pick from library, upload, paste URL, or clear. */
-export function ImageField({ value, onChange, onAlt, label = 'Image' }: { value: string; onChange: (url: string) => void; onAlt?: (alt: string) => void; label?: string }) {
+export function ImageField({ value, onChange, onAlt, onPick, label = 'Image' }: { value: string; onChange: (url: string) => void; onAlt?: (alt: string) => void; onPick?: (url: string, alt: string) => void; label?: string }) {
   const [open, setOpen] = useState(false);
   return (
     <div>
@@ -91,7 +91,7 @@ export function ImageField({ value, onChange, onAlt, label = 'Image' }: { value:
           </div>
         </div>
       </div>
-      <MediaPickerDialog open={open} onOpenChange={setOpen} onPick={(url, alt) => { onChange(url); if (alt) onAlt?.(alt); }} />
+      <MediaPickerDialog open={open} onOpenChange={setOpen} onPick={(url, alt) => { if (onPick) onPick(url, alt); else { onChange(url); if (alt) onAlt?.(alt); } }} />
     </div>
   );
 }

@@ -126,3 +126,6 @@
   body { background: white !important; }
   .print-area { box-shadow: none !important; border: none !important; }
 }
+
+/* Admin uses a neutral UI typeface regardless of the public theme. */
+.admin-root h1, .admin-root h2, .admin-root h3, .admin-root h4 { font-family: inherit; font-weight: 600; text-transform: none; letter-spacing: -0.01em; line-height: 1.3; }
