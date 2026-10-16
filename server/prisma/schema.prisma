@@ -1,0 +1,890 @@
+// The Aurelle — hotel platform data model (PostgreSQL).
+// Money is stored as integers in minor units (paise). Stay dates use DATE columns.
+// Double-booking is prevented by an exclusion constraint on booking_rooms (see the init migration).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Identity & access ──────────────────────────────────────────────────────
+
+model Role {
+  id          String   @id @default(cuid())
+  key         String   @unique // SUPER_ADMIN, HOTEL_MANAGER, BOOKING_MANAGER, RECEPTIONIST, CONTENT_EDITOR, CUSTOMER
+  name        String
+  description String   @default("")
+  permissions String[]
+  isSystem    Boolean  @default(true)
+  users       User[]
+  updatedAt   DateTime @updatedAt
+
+  @@map("roles")
+}
+
+model User {
+  id               String    @id @default(cuid())
+  email            String    @unique
+  passwordHash     String?
+  name             String
+  phone            String    @default("")
+  country          String    @default("")
+  roleId           String
+  role             Role      @relation(fields: [roleId], references: [id])
+  isActive         Boolean   @default(true)
+  marketingOptIn   Boolean   @default(false)
+  notes            String    @default("") // internal staff notes about a customer
+  failedLogins     Int       @default(0)
+  lockedUntil      DateTime?
+  lastLoginAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  sessions         Session[]
+  resetTokens      PasswordResetToken[]
+  bookings         Booking[]
+  wishlist         WishlistItem[]
+  reviews          Review[]
+  notes_authored   BookingNote[]
+  auditLogs        AuditLog[]
+  notifications    Notification[]
+  inquiriesAssigned ContactInquiry[] @relation("InquiryAssignee")
+  inquiries        ContactInquiry[] @relation("InquiryUser")
+  media            MediaAsset[]
+
+  @@index([roleId])
+  @@index([createdAt])
+  @@map("users")
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  tokenHash  String   @unique
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime
+  ip         String   @default("")
+  userAgent  String   @default("")
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+// ─── Configuration & CMS ────────────────────────────────────────────────────
+
+/// Operational settings (booking policy, payments…) — one row per group, validated by zod in @aurelle/shared.
+model Setting {
+  key         String   @id
+  value       Json
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+
+  @@map("settings")
+}
+
+enum ConfigStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+/// Theme + brand + navigation + footer + contact + SEO defaults. One DRAFT and one PUBLISHED row; history is ARCHIVED.
+model SiteConfig {
+  id            String       @id @default(cuid())
+  status        ConfigStatus
+  version       Int
+  data          Json
+  publishedAt   DateTime?
+  publishedById String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([status, version])
+  @@map("site_configs")
+}
+
+enum PageStatus {
+  DRAFT
+  PUBLISHED
+  SCHEDULED
+  ARCHIVED
+}
+
+/// A CMS page. `draft` and `published` hold { sections: Section[], seo } validated by the shared section registry.
+model Page {
+  id            String         @id @default(cuid())
+  slug          String         @unique
+  title         String
+  kind          String         @default("STANDARD") // HOME | STANDARD | LEGAL | SYSTEM
+  status        PageStatus     @default(DRAFT)
+  draft         Json
+  published     Json?
+  hasUnpublishedChanges Boolean @default(true)
+  showInSitemap Boolean        @default(true)
+  isSystem      Boolean        @default(false) // system pages cannot be deleted or re-slugged
+  publishedAt   DateTime?
+  scheduledAt   DateTime?
+  updatedById   String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  revisions     PageRevision[]
+
+  @@index([status])
+  @@map("pages")
+}
+
+model PageRevision {
+  id          String   @id @default(cuid())
+  pageId      String
+  page        Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  data        Json
+  note        String   @default("")
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([pageId, createdAt])
+  @@map("page_revisions")
+}
+
+model MediaAsset {
+  id           String   @id @default(cuid())
+  url          String
+  storageKey   String   @default("")
+  provider     String   @default("LOCAL") // LOCAL | CLOUDINARY | EXTERNAL
+  mimeType     String   @default("image/webp")
+  width        Int?
+  height       Int?
+  size         Int      @default(0)
+  alt          String   @default("")
+  folder       String   @default("general")
+  variants     Json? // [{ width, url }]
+  uploadedById String?
+  uploadedBy   User?    @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now())
+
+  @@index([folder, createdAt])
+  @@map("media_assets")
+}
+
+model GalleryItem {
+  id          String   @id @default(cuid())
+  url         String
+  alt         String
+  caption     String   @default("")
+  category    String
+  type        String   @default("IMAGE")
+  videoUrl    String   @default("")
+  sortOrder   Int      @default(0)
+  isPublished Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([category, sortOrder])
+  @@map("gallery_items")
+}
+
+model BlogPost {
+  id             String    @id @default(cuid())
+  slug           String    @unique
+  title          String
+  excerpt        String    @default("")
+  body           String    @default("")
+  coverImage     String    @default("")
+  category       String    @default("Journal")
+  tags           String[]
+  authorName     String    @default("")
+  status         String    @default("DRAFT") // DRAFT | PUBLISHED | SCHEDULED
+  publishedAt    DateTime?
+  seoTitle       String    @default("")
+  seoDescription String    @default("")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([status, publishedAt])
+  @@map("blog_posts")
+}
+
+model Faq {
+  id          String   @id @default(cuid())
+  question    String
+  answer      String
+  category    String   @default("General")
+  sortOrder   Int      @default(0)
+  isPublished Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([category, sortOrder])
+  @@map("faqs")
+}
+
+// ─── Rooms & inventory ──────────────────────────────────────────────────────
+
+enum PublishStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+model RoomType {
+  id               String        @id @default(cuid())
+  slug             String        @unique
+  name             String
+  tagline          String        @default("")
+  description      String        @default("")
+  category         String        @default("ROOM") // ROOM | SUITE | VILLA | PENTHOUSE
+  basePrice        Int
+  weekendPrice     Int?
+  baseOccupancy    Int           @default(2)
+  maxAdults        Int           @default(2)
+  maxChildren      Int           @default(1)
+  maxOccupancy     Int           @default(3)
+  maxExtraBeds     Int           @default(1)
+  extraAdultCharge Int           @default(0)
+  extraChildCharge Int           @default(0)
+  extraBedCharge   Int           @default(0)
+  bedType          String        @default("")
+  sizeSqm          Int
+  view             String        @default("")
+  minStay          Int           @default(1)
+  maxStay          Int           @default(30)
+  isFeatured       Boolean       @default(false)
+  status           PublishStatus @default(DRAFT)
+  sortOrder        Int           @default(0)
+  highlights       String[]
+  seoTitle         String        @default("")
+  seoDescription   String        @default("")
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  images     RoomImage[]
+  amenities  RoomTypeAmenity[]
+  rooms      Room[]
+  rateRules  RateRule[]
+  blackouts  BlackoutDate[]
+  bookings   Booking[]
+  wishlisted WishlistItem[]
+  reviews    Review[]
+
+  @@index([status, sortOrder])
+  @@map("room_types")
+}
+
+model RoomImage {
+  id         String   @id @default(cuid())
+  roomTypeId String
+  roomType   RoomType @relation(fields: [roomTypeId], references: [id], onDelete: Cascade)
+  url        String
+  alt        String   @default("")
+  sortOrder  Int      @default(0)
+
+  @@index([roomTypeId, sortOrder])
+  @@map("room_images")
+}
+
+model Amenity {
+  id        String            @id @default(cuid())
+  name      String            @unique
+  icon      String            @default("sparkles")
+  category  String            @default("Room")
+  roomTypes RoomTypeAmenity[]
+
+  @@map("amenities")
+}
+
+model RoomTypeAmenity {
+  roomTypeId String
+  amenityId  String
+  roomType   RoomType @relation(fields: [roomTypeId], references: [id], onDelete: Cascade)
+  amenity    Amenity  @relation(fields: [amenityId], references: [id], onDelete: Cascade)
+
+  @@id([roomTypeId, amenityId])
+  @@map("room_type_amenities")
+}
+
+/// A physical, sellable room unit.
+model Room {
+  id           String        @id @default(cuid())
+  number       String        @unique
+  floor        String        @default("")
+  roomTypeId   String
+  roomType     RoomType      @relation(fields: [roomTypeId], references: [id], onDelete: Restrict)
+  status       String        @default("AVAILABLE") // AVAILABLE | OUT_OF_SERVICE
+  housekeeping String        @default("CLEAN") // CLEAN | DIRTY | INSPECTED
+  notes        String        @default("")
+  isArchived   Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  allocations  BookingRoom[]
+  blocks       RoomBlock[]
+
+  @@index([roomTypeId])
+  @@map("rooms")
+}
+
+/// Takes a single physical room out of inventory for a date range (maintenance, owner use…).
+model RoomBlock {
+  id          String   @id @default(cuid())
+  roomId      String
+  room        Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  startDate   DateTime @db.Date
+  endDate     DateTime @db.Date // exclusive
+  reason      String   @default("Maintenance")
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([roomId, startDate])
+  @@map("room_blocks")
+}
+
+/// Closes a room type (or the whole hotel when roomTypeId is null) to new bookings for the date range (inclusive).
+model BlackoutDate {
+  id         String    @id @default(cuid())
+  roomTypeId String?
+  roomType   RoomType? @relation(fields: [roomTypeId], references: [id], onDelete: Cascade)
+  startDate  DateTime  @db.Date
+  endDate    DateTime  @db.Date
+  reason     String    @default("")
+  createdAt  DateTime  @default(now())
+
+  @@index([startDate, endDate])
+  @@map("blackout_dates")
+}
+
+// ─── Pricing ────────────────────────────────────────────────────────────────
+
+/// Seasonal / weekday rates. kind OVERRIDE|FIXED: value in paise. PERCENT: basis points.
+model RateRule {
+  id         String    @id @default(cuid())
+  name       String
+  roomTypeId String?
+  roomType   RoomType? @relation(fields: [roomTypeId], references: [id], onDelete: Cascade)
+  startDate  DateTime  @db.Date
+  endDate    DateTime  @db.Date // inclusive
+  kind       String
+  value      Int
+  daysOfWeek Int[]
+  priority   Int       @default(10)
+  isActive   Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([startDate, endDate])
+  @@map("rate_rules")
+}
+
+model Holiday {
+  id        String   @id @default(cuid())
+  date      DateTime @unique @db.Date
+  name      String
+  upliftBps Int      @default(0)
+
+  @@map("holidays")
+}
+
+model MealPlan {
+  id            String    @id @default(cuid())
+  code          String    @unique
+  name          String
+  description   String    @default("")
+  pricePerAdult Int
+  pricePerChild Int
+  isActive      Boolean   @default(true)
+  sortOrder     Int       @default(0)
+  bookings      Booking[]
+
+  @@map("meal_plans")
+}
+
+model AddOn {
+  id          String   @id @default(cuid())
+  name        String
+  description String   @default("")
+  category    String   @default("OTHER")
+  pricingType String // PER_STAY | PER_NIGHT | PER_GUEST | PER_GUEST_PER_NIGHT
+  price       Int
+  taxable     Boolean  @default(true)
+  maxQuantity Int      @default(1)
+  image       String   @default("")
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("add_ons")
+}
+
+/// Taxes and fees. PERCENT: basis points. FLAT_*: paise. Optional nightly-rate slab (e.g. GST 5% / 18%).
+model ChargeRule {
+  id             String  @id @default(cuid())
+  name           String
+  kind           String // TAX | FEE
+  calculation    String // PERCENT | FLAT_PER_STAY | FLAT_PER_NIGHT
+  value          Int
+  appliesTo      String // ROOM | EXTRAS | ALL
+  minNightlyRate Int?
+  maxNightlyRate Int?
+  isActive       Boolean @default(true)
+  sortOrder      Int     @default(0)
+
+  @@map("charge_rules")
+}
+
+model Offer {
+  id           String    @id @default(cuid())
+  slug         String    @unique
+  title        String
+  subtitle     String    @default("")
+  description  String    @default("")
+  image        String    @default("")
+  discountType String    @default("NONE") // NONE | PERCENT | FIXED_PER_NIGHT
+  value        Int       @default(0)
+  minNights    Int       @default(1)
+  roomTypeIds  String[]
+  stayStart    DateTime? @db.Date
+  stayEnd      DateTime? @db.Date
+  inclusions   String[]
+  terms        String    @default("")
+  isActive     Boolean   @default(true)
+  isFeatured   Boolean   @default(false)
+  sortOrder    Int       @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  bookings     Booking[]
+
+  @@map("offers")
+}
+
+model Coupon {
+  id               String             @id @default(cuid())
+  code             String             @unique
+  description      String             @default("")
+  discountType     String // PERCENT (bps) | FIXED (paise)
+  value            Int
+  maxDiscount      Int?
+  minSubtotal      Int?
+  minNights        Int?
+  startsAt         DateTime?
+  endsAt           DateTime?
+  usageLimit       Int?
+  perCustomerLimit Int?
+  usedCount        Int                @default(0)
+  roomTypeIds      String[]
+  isActive         Boolean            @default(true)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  redemptions      CouponRedemption[]
+  bookings         Booking[]
+
+  @@map("coupons")
+}
+
+model CouponRedemption {
+  id        String   @id @default(cuid())
+  couponId  String
+  coupon    Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  bookingId String   @unique
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  email     String
+  amount    Int
+  createdAt DateTime @default(now())
+
+  @@index([couponId, email])
+  @@map("coupon_redemptions")
+}
+
+// ─── Bookings ───────────────────────────────────────────────────────────────
+
+enum BookingStatus {
+  PENDING_PAYMENT
+  PENDING
+  CONFIRMED
+  CHECKED_IN
+  CHECKED_OUT
+  CANCELLED
+  REJECTED
+  EXPIRED
+  NO_SHOW
+}
+
+enum PaymentStatus {
+  UNPAID
+  PENDING
+  PARTIALLY_PAID
+  PAID
+  FAILED
+  PARTIALLY_REFUNDED
+  REFUNDED
+}
+
+enum RefundStatus {
+  NONE
+  PENDING
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
+model Booking {
+  id                 String        @id @default(cuid())
+  reference          String        @unique
+  userId             String?
+  user               User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  roomTypeId         String
+  roomType           RoomType      @relation(fields: [roomTypeId], references: [id], onDelete: Restrict)
+  status             BookingStatus
+  paymentStatus      PaymentStatus @default(UNPAID)
+  refundStatus       RefundStatus  @default(NONE)
+  paymentMethod      String // ONLINE | PAY_AT_HOTEL
+  source             String        @default("WEBSITE")
+  checkIn            DateTime      @db.Date
+  checkOut           DateTime      @db.Date
+  nights             Int
+  roomsCount         Int
+  adults             Int
+  children           Int
+  extraBeds          Int           @default(0)
+  guestFirstName     String
+  guestLastName      String
+  guestEmail         String
+  guestPhone         String
+  guestCountry       String        @default("")
+  requests           Json // arrival time, occasion, early/late, airport transfer, instructions
+  mealPlanId         String?
+  mealPlan           MealPlan?     @relation(fields: [mealPlanId], references: [id], onDelete: SetNull)
+  offerId            String?
+  offer              Offer?        @relation(fields: [offerId], references: [id], onDelete: SetNull)
+  couponId           String?
+  coupon             Coupon?       @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  couponCode         String?
+  currency           String        @default("INR")
+  subtotal           Int
+  discountTotal      Int
+  taxTotal           Int
+  feeTotal           Int
+  grandTotal         Int
+  depositDue         Int
+  amountPaid         Int           @default(0)
+  amountRefunded     Int           @default(0)
+  refundableAmount   Int           @default(0) // computed on cancellation per policy
+  cancellationPenalty Int          @default(0)
+  pricingSnapshot    Json
+  holdExpiresAt      DateTime?
+  confirmedAt        DateTime?
+  checkedInAt        DateTime?
+  checkedOutAt       DateTime?
+  cancelledAt        DateTime?
+  cancellationReason String?
+  cancelledBy        String? // GUEST | STAFF | SYSTEM
+  manageTokenHash    String?
+  utm                Json?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  rooms       BookingRoom[]
+  guests      BookingGuest[]
+  lineItems   BookingLineItem[]
+  payments    Payment[]
+  refunds     Refund[]
+  notes       BookingNote[]
+  events      BookingEvent[]
+  redemption  CouponRedemption?
+  review      Review?
+
+  @@index([status])
+  @@index([checkIn])
+  @@index([checkOut])
+  @@index([createdAt])
+  @@index([guestEmail])
+  @@index([userId])
+  @@index([roomTypeId, checkIn])
+  @@map("bookings")
+}
+
+/// One physical room allocated to a booking for [checkIn, checkOut).
+/// A PostgreSQL EXCLUDE constraint guarantees no two active allocations overlap for the same room.
+model BookingRoom {
+  id         String   @id @default(cuid())
+  bookingId  String
+  booking    Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  roomId     String
+  room       Room     @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  checkIn    DateTime @db.Date
+  checkOut   DateTime @db.Date
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  @@index([roomId, checkIn])
+  @@index([bookingId])
+  @@map("booking_rooms")
+}
+
+model BookingGuest {
+  id        String  @id @default(cuid())
+  bookingId String
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  firstName String
+  lastName  String
+  type      String  @default("ADULT") // ADULT | CHILD
+  age       Int?
+  isPrimary Boolean @default(false)
+
+  @@index([bookingId])
+  @@map("booking_guests")
+}
+
+model BookingLineItem {
+  id         String    @id @default(cuid())
+  bookingId  String
+  booking    Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  kind       String // ROOM | EXTRA_ADULT | EXTRA_CHILD | EXTRA_BED | MEAL_PLAN | ADDON | OFFER | COUPON | TAX | FEE
+  label      String
+  date       DateTime? @db.Date
+  quantity   Int       @default(1)
+  unitAmount Int
+  amount     Int
+  refId      String?
+  sortOrder  Int       @default(0)
+
+  @@index([bookingId])
+  @@map("booking_line_items")
+}
+
+model BookingNote {
+  id        String   @id @default(cuid())
+  bookingId String
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  authorId  String?
+  author    User?    @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([bookingId])
+  @@map("booking_notes")
+}
+
+model BookingEvent {
+  id        String   @id @default(cuid())
+  bookingId String
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  type      String
+  message   String
+  actorId   String?
+  data      Json?
+  createdAt DateTime @default(now())
+
+  @@index([bookingId, createdAt])
+  @@map("booking_events")
+}
+
+// ─── Payments ───────────────────────────────────────────────────────────────
+
+model Payment {
+  id                String    @id @default(cuid())
+  bookingId         String
+  booking           Booking   @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  provider          String // RAZORPAY | SANDBOX | CASH | CARD_AT_DESK | BANK_TRANSFER | UPI_AT_DESK
+  providerOrderId   String?   @unique
+  providerPaymentId String?   @unique
+  amount            Int
+  currency          String    @default("INR")
+  status            String // CREATED | CAPTURED | FAILED | REFUNDED | PARTIALLY_REFUNDED
+  method            String    @default("")
+  reference         String    @default("")
+  amountRefunded    Int       @default(0)
+  errorCode         String?
+  errorDescription  String?
+  isTest            Boolean   @default(false)
+  recordedById      String?
+  capturedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  refunds           Refund[]
+
+  @@index([bookingId])
+  @@index([status, createdAt])
+  @@map("payments")
+}
+
+model Refund {
+  id               String       @id @default(cuid())
+  paymentId        String?
+  payment          Payment?     @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  bookingId        String
+  booking          Booking      @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  amount           Int
+  status           RefundStatus @default(PENDING)
+  providerRefundId String?      @unique
+  reason           String       @default("")
+  initiatedById    String?
+  processedAt      DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@index([bookingId])
+  @@map("refunds")
+}
+
+/// Every verified provider webhook, keyed by its event id, so duplicates are processed exactly once.
+model WebhookEvent {
+  id          String    @id @default(cuid())
+  provider    String
+  eventId     String
+  type        String
+  payload     Json
+  processedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@unique([provider, eventId])
+  @@map("webhook_events")
+}
+
+// ─── Engagement ─────────────────────────────────────────────────────────────
+
+model WishlistItem {
+  userId     String
+  roomTypeId String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roomType   RoomType @relation(fields: [roomTypeId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@id([userId, roomTypeId])
+  @@map("wishlist_items")
+}
+
+model Review {
+  id         String    @id @default(cuid())
+  userId     String?
+  user       User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  bookingId  String?   @unique
+  booking    Booking?  @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  roomTypeId String?
+  roomType   RoomType? @relation(fields: [roomTypeId], references: [id], onDelete: SetNull)
+  name       String
+  location   String    @default("")
+  rating     Int
+  title      String
+  body       String
+  status     String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  source     String    @default("GUEST") // GUEST | EDITORIAL | PRESS
+  isFeatured Boolean   @default(false)
+  response   String    @default("")
+  stayDate   DateTime? @db.Date
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([status, isFeatured])
+  @@map("reviews")
+}
+
+model ContactInquiry {
+  id           String   @id @default(cuid())
+  name         String
+  email        String
+  phone        String   @default("")
+  type         String   @default("GENERAL")
+  subject      String   @default("")
+  message      String
+  eventDate    DateTime? @db.Date
+  guestCount   Int?
+  status       String   @default("NEW") // NEW | IN_PROGRESS | RESOLVED | SPAM
+  assignedToId String?
+  assignedTo   User?    @relation("InquiryAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  userId       String?
+  user         User?    @relation("InquiryUser", fields: [userId], references: [id], onDelete: SetNull)
+  internalNotes Json    @default("[]")
+  ip           String   @default("")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@map("contact_inquiries")
+}
+
+model NewsletterSubscriber {
+  id               String    @id @default(cuid())
+  email            String    @unique
+  name             String    @default("")
+  status           String    @default("SUBSCRIBED") // SUBSCRIBED | UNSUBSCRIBED
+  source           String    @default("website")
+  unsubscribeToken String    @unique
+  unsubscribedAt   DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@index([status, createdAt])
+  @@map("newsletter_subscribers")
+}
+
+// ─── Operations ─────────────────────────────────────────────────────────────
+
+/// In-app notifications. userId null = visible to all staff holding `permission`.
+model Notification {
+  id         String    @id @default(cuid())
+  userId     String?
+  user       User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission String?
+  type       String
+  title      String
+  body       String    @default("")
+  link       String    @default("")
+  readBy     String[]
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model EmailLog {
+  id        String   @id @default(cuid())
+  to        String
+  subject   String
+  template  String
+  status    String // SENT | FAILED | LOGGED
+  provider  String
+  error     String?
+  html      String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("email_logs")
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actor     User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action    String
+  entity    String
+  entityId  String?
+  summary   String   @default("")
+  before    Json?
+  after     Json?
+  ip        String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([createdAt])
+  @@index([actorId])
+  @@map("audit_logs")
+}
