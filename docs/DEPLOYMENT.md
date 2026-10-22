@@ -2,7 +2,7 @@
 
 ## Production checklist
 
-1. Provision **PostgreSQL 14+** (managed: Neon, Supabase, RDS, Cloud SQL). The first migration creates the `btree_gist` extension. On managed services it is usually allow-listed; otherwise ask your provider to enable it.
+1. Provision **MongoDB 6+ as a replica set**. Prisma needs transactions, which standalone `mongod` doesn't support. MongoDB Atlas is the easiest; M0 is free, M10+ is for production. Other options are a self-hosted replica set or another provider. In Atlas, add a database user and allow your server's IP under Network Access. Then use the `mongodb+srv://…/hotel?retryWrites=true&w=majority` URI as `DATABASE_URL`.
 2. Set environment variables from `.env.example` with real values:
    - `NODE_ENV=production`
    - `SESSION_SECRET` (`openssl rand -base64 48`)
@@ -10,7 +10,7 @@
    - `APP_URL` and `API_URL` (your https domain)
    - `TRUST_PROXY` (1 behind one load balancer)
    - Payment, email and storage settings as below.
-3. Build and run (Docker): `docker build -t aurelle .`, then run with the env vars and a persistent volume at `/app/server/uploads` (unless you use Cloudinary). The container runs `prisma migrate deploy` on start and serves both the API and the built website on port 4000.
+3. Build and run (Docker): `docker build -t aurelle .`, then run with the env vars and a persistent volume at `/app/server/uploads` (unless you use Cloudinary). The container runs `prisma db push` on start (it only creates collections and indexes and never drops data). The API also ensures its partial unique indexes on boot. and serves both the API and the built website on port 4000.
 4. Create the first admin: `docker exec -it <container> npx tsx src/scripts/createAdmin.ts --email you@hotel.com --name "Your Name"`. Outside Docker, run `npm run create-admin -- --email …`.
 5. Put HTTPS in front (load balancer, Caddy, nginx or Cloudflare). Cookies are `Secure` in production, so HTTPS is required.
 6. Sign in at `/admin`. Then:
@@ -24,7 +24,7 @@
 
 ```bash
 npm ci && npm run build
-cd server && npx prisma migrate deploy
+npm run db:deploy
 SERVE_WEB=true NODE_ENV=production node --env-file=.env dist/index.js
 ```
 
@@ -32,7 +32,7 @@ You can also host `web/dist` on a CDN (Netlify, Vercel, CloudFront). Configure i
 
 ### Scaling
 
-The API is stateless. Sessions live in PostgreSQL, so you can run several instances behind a load balancer. The scheduled jobs (expiring unpaid holds, scheduled publishing, cleanup) are idempotent and safe to run on every instance. To run them on one instance only, set `JOBS_ENABLED=false` on the others. With multiple instances, use Cloudinary or shared storage for uploads.
+The API is stateless. Sessions live in MongoDB, so you can run several instances behind a load balancer. The scheduled jobs (expiring unpaid holds, scheduled publishing, cleanup) are idempotent and safe to run on every instance. To run them on one instance only, set `JOBS_ENABLED=false` on the others. With multiple instances, use Cloudinary or shared storage for uploads.
 
 ## Razorpay
 
@@ -85,13 +85,13 @@ Admins can also register external image URLs, such as Unsplash, in the library.
 
 ## Backups & maintenance
 
-- **Database:** enable automated daily backups with point-in-time recovery on your managed PostgreSQL. For self-hosting:
-  `pg_dump --format=custom --file=aurelle-$(date +%F).dump "$DATABASE_URL"`
+- **Database:** enable automated backups on your managed MongoDB. Atlas offers continuous backups and point-in-time restores on M10+; on M0, export regularly. For self-hosting or exports:
+  `mongodump --uri="$DATABASE_URL" --archive=aurelle-$(date +%F).archive.gz --gzip`
   Run it nightly and keep at least 30 days off-site, for example in an S3 bucket with lifecycle rules.
-  Restore with `pg_restore --clean --if-exists -d "$DATABASE_URL" aurelle-YYYY-MM-DD.dump`.
+  Restore with `mongorestore --uri="$DATABASE_URL" --archive=aurelle-YYYY-MM-DD.archive.gz --gzip --drop`, then run `npm run db:deploy` to recreate the indexes.
 - **Uploads:** back up the uploads volume (`rsync`/`restic` to object storage), or use Cloudinary.
-- **Test restores** quarterly into a staging database. Run `npx prisma migrate status` against it.
-- **Upgrades:** deploy new code. Migrations apply automatically on start and are forward-only; review the SQL in `server/prisma/migrations` before each release.
+- **Test restores** quarterly into a staging database. Run `npm run db:deploy` against it and check that the API's `/api/health` responds.
+- **Upgrades:** deploy new code. Index changes from `schema.prisma` apply automatically on start. MongoDB is schemaless, so new optional fields need no migration. Review `git diff server/prisma/schema.prisma` before each release.
 - **Monitoring:** `GET /api/health` returns 200 when the database is reachable. Logs are structured JSON (pino) on stdout, with secrets redacted.
 - **Data retention:** the cleanup job deletes expired sessions and reset tokens, plus notifications older than 90 days. Bookings and payments are retained for tax compliance.
-- **Rotating secrets:** changing `SESSION_SECRET` is safe; sessions are database-backed and the secret is used only for signing helpers. To force everyone to sign in again, delete the rows in `sessions`. Rotate Razorpay keys in the dashboard and update the env vars together.
+- **Rotating secrets:** changing `SESSION_SECRET` is safe; sessions are database-backed and the secret is used only for signing helpers. To force everyone to sign in again, delete the documents in the `sessions` collection. Rotate Razorpay keys in the dashboard and update the env vars together.

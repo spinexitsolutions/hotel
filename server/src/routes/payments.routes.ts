@@ -30,7 +30,7 @@ paymentsRouter.post('/sandbox/simulate', paymentLimiter, ah(async (req, res) => 
   const outcome = req.body?.outcome === 'failure' ? 'failure' : 'success';
   if (!orderId || !reference) throw AppError.badRequest('orderId and reference are required.');
   await findBookingForGuest(reference, { token: str(req.body?.token), user: req.user });
-  const payment = await prisma.payment.findUnique({ where: { providerOrderId: orderId }, include: { booking: true } });
+  const payment = await prisma.payment.findFirst({ where: { providerOrderId: orderId }, include: { booking: true } });
   if (!payment || payment.booking.reference !== reference.toUpperCase()) throw AppError.notFound('Payment order');
   if (outcome === 'failure') return res.json({ outcome, error: { code: 'BAD_REQUEST_ERROR', description: 'Test mode: the bank declined this payment.' } });
   res.json({ outcome, ...sandbox.simulateSuccess(orderId) });

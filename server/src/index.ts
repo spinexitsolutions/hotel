@@ -1,6 +1,6 @@
 import { env } from './config/env';
 import { logger } from './config/logger';
-import { prisma } from './config/prisma';
+import { ensureIndexes, prisma } from './config/prisma';
 import { createApp } from './app';
 import { startJobs } from './jobs/scheduler';
 import { ensureSiteConfig } from './services/siteConfig.service';
@@ -8,6 +8,7 @@ import { paymentProvider } from './services/payments';
 
 async function main() {
   await prisma.$connect();
+  await ensureIndexes();
   await ensureSiteConfig();
   const app = createApp();
   const server = app.listen(env.PORT, () => {

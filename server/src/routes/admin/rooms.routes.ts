@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { addDays, blackoutSchema, isValidISODate, roomBlockSchema, roomSchema, roomTypeSchema, todayInZone } from '@aurelle/shared';
 import type { Prisma } from '@prisma/client';
-import { prisma } from '../../config/prisma';
+import { prisma, runTransaction } from '../../config/prisma';
 import { AppError, ah, str } from '../../utils/http';
 import { dbDate, isoOf } from '../../utils/dates';
 import { requirePermission } from '../../middleware/auth';
@@ -57,7 +57,7 @@ roomsRouter.put('/room-types/:id', requirePermission('rooms.manage'), ah(async (
   const body = roomTypeSchema.parse(req.body);
   const before = await prisma.roomType.findUnique({ where: { id: req.params.id } });
   if (!before) throw AppError.notFound('Room type');
-  const t = await prisma.$transaction(async (tx) => {
+  const t = await runTransaction(async (tx) => {
     await tx.roomImage.deleteMany({ where: { roomTypeId: before.id } });
     await tx.roomTypeAmenity.deleteMany({ where: { roomTypeId: before.id } });
     return tx.roomType.update({

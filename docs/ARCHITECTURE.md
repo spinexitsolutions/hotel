@@ -1,7 +1,7 @@
 # The Aurelle — Architecture
 
 A luxury hotel website, booking engine and admin platform. Everything a hotel normally edits — theme, imagery,
-navigation, page sections, rooms, rates, offers, policies — lives in PostgreSQL and is managed from `/admin`.
+navigation, page sections, rooms, rates, offers, policies — lives in MongoDB and is managed from `/admin`.
 
 ## Stack
 
@@ -10,7 +10,7 @@ navigation, page sections, rooms, rates, offers, policies — lives in PostgreSQ
 | Web | React 19 + Vite + TypeScript, Tailwind CSS, Motion, Lenis, React Three Fiber | Fast SPA with route-level code splitting; theme tokens become CSS variables so admin edits restyle the site live |
 | Data fetching / forms | TanStack Query, react-hook-form + zod | Same zod schemas validate on client and server |
 | API | Node 20+, Express 4, TypeScript | Thin route layer over services |
-| Database | PostgreSQL 16 + Prisma 6 | Relational integrity, transactions, exclusion constraints for overbooking safety |
+| Database | MongoDB (replica set, e.g. Atlas) + Prisma 6 | Free managed hosting (Atlas M0), multi-document transactions, unique indexes for overbooking safety; Prisma keeps the typed, relational-style API |
 | Auth | Server-side sessions (opaque token, SHA-256 hashed in DB) in an httpOnly cookie + double-submit CSRF | Revocable instantly, no tokens in JS |
 | Payments | Provider interface → Razorpay (live/test keys) or a clearly-labelled Sandbox provider | Swappable gateway; signature + webhook verification |
 | Email | Provider interface → SMTP (nodemailer) / Resend API / Log (stored in `email_logs`) | Works with zero config in development |
@@ -32,7 +32,7 @@ hotel/
 │           permissions.ts roles → permissions matrix
 │           schemas.ts     every API request schema
 ├─ server/
-│  ├─ prisma/              schema.prisma + migrations (incl. raw SQL constraints)
+│  ├─ prisma/              schema.prisma (MongoDB; applied with `prisma db push`)
 │  └─ src/
 │     ├─ config/           env (zod-validated), prisma client, logger
 │     ├─ middleware/       sessions/auth, permission guard, CSRF, rate limits, validation, uploads, errors
@@ -41,7 +41,7 @@ hotel/
 │     ├─ routes/           public/*, account, admin/*, payments (+ webhooks)
 │     ├─ jobs/             hold expiry, scheduled publishing, session cleanup
 │     └─ scripts/          seed (demo hotel), create-admin
-│  └─ tests/               vitest + supertest against a real PostgreSQL test database
+│  └─ tests/               vitest + supertest against a real MongoDB test database
 ├─ web/
 │  └─ src/
 │     ├─ app/              router, providers (site config → CSS variables, auth, query client)
@@ -68,7 +68,7 @@ See `server/prisma/schema.prisma` for every column. Groups:
 - **Pricing:** `rate_rules` (seasonal/weekday overrides & adjustments), `holidays`, `meal_plans`, `add_ons`,
   `charge_rules` (taxes & fees with nightly-rate slabs), `offers`, `coupons` → `coupon_redemptions`.
 - **Bookings:** `bookings` (status, payment status, refund status tracked separately, price snapshot) →
-  `booking_rooms` (physical room allocations), `booking_guests`, `booking_line_items`, `booking_notes`, `booking_events`.
+  `booking_rooms` (physical room allocations), `room_nights` (one per sold room-night; the overbooking guard), `booking_guests`, `booking_line_items`, `booking_notes`, `booking_events`.
 - **Payments:** `payments`, `refunds`, `webhook_events` (unique per provider event id → idempotent webhooks).
 - **Engagement & ops:** `wishlist_items`, `reviews`, `contact_inquiries`, `newsletter_subscribers`, `notifications`,
   `email_logs`, `audit_logs`.
@@ -77,10 +77,13 @@ See `server/prisma/schema.prisma` for every column. Groups:
 
 1. Every booking allocates **specific physical rooms** (`booking_rooms`) at creation time — inventory is the set of
    rooms of that type that are in service, not blocked, and not already allocated.
-2. Allocation runs inside a transaction holding a `pg_advisory_xact_lock` per room type, so concurrent requests for
-   the same room type are serialized; expired payment holds are released inside the same lock first.
-3. A PostgreSQL `EXCLUDE USING gist (roomId WITH =, daterange(checkIn, checkOut) WITH &&) WHERE active` constraint
-   makes an overlapping allocation physically impossible, even from a buggy code path or a manual SQL edit.
+2. Allocation runs inside a MongoDB transaction that first bumps a per-room-type `inventory_locks` document. Two
+   concurrent allocations for the same type write the same document, so MongoDB aborts one with a write conflict and
+   it is retried against the committed state (`runTransaction`). Expired payment holds are released inside the same
+   transaction first.
+3. Every active allocation is mirrored night by night in `room_nights`, which has a **unique index on
+   `(roomId, date)`**. An overlapping allocation is therefore physically impossible, even from a buggy code path or a
+   manual database edit.
 4. Unpaid online bookings hold inventory for `holdMinutes` (default 20). A job expires them; a late payment for an
    expired hold tries to re-allocate and otherwise flags the booking for refund.
 

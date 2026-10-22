@@ -1,5 +1,5 @@
 import { defaultSiteConfig, siteConfigSchema, type SiteConfig } from '@aurelle/shared';
-import { prisma, type Prisma } from '../config/prisma';
+import { prisma, runTransaction, type Prisma } from '../config/prisma';
 
 const asJson = (v: unknown) => v as Prisma.InputJsonValue;
 import { AppError } from '../utils/http';
@@ -65,7 +65,7 @@ export async function saveDraftConfig(input: unknown) {
 }
 
 export async function publishConfig(userId: string) {
-  await prisma.$transaction(async (tx) => {
+  await runTransaction(async (tx) => {
     const draft = await tx.siteConfig.findFirstOrThrow({ where: { status: 'DRAFT' } });
     const current = await tx.siteConfig.findFirstOrThrow({ where: { status: 'PUBLISHED' } });
     const config = siteConfigSchema.parse(hydrate(draft.data));

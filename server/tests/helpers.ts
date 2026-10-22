@@ -1,7 +1,7 @@
 import request from 'supertest';
 import { addDays, todayInZone, DEFAULT_ROLE_PERMISSIONS, ROLE_KEYS, ROLE_LABELS, defaultBookingSettings } from '@aurelle/shared';
 import { createApp } from '../src/app';
-import { prisma } from '../src/config/prisma';
+import { ensureIndexes, prisma, wipeDatabase } from '../src/config/prisma';
 import { hashPassword } from '../src/services/auth.service';
 import { clearSettingsCache } from '../src/services/settings.service';
 
@@ -36,8 +36,8 @@ export const future = (days: number) => addDays(today(), days);
 
 /** Wipes the test DB and creates roles, one user per role, a room type with N rooms, and GST charges. */
 export async function resetFixtures(opts: { rooms?: number } = {}) {
-  const tables = await prisma.$queryRaw<{ tablename: string }[]>`SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename <> '_prisma_migrations'`;
-  await prisma.$executeRawUnsafe(`TRUNCATE ${tables.map((t) => `"${t.tablename}"`).join(', ')} CASCADE`);
+  await wipeDatabase();
+  await ensureIndexes();
   clearSettingsCache();
   const roles: Record<string, string> = {};
   for (const key of ROLE_KEYS) roles[key] = (await prisma.role.create({ data: { key, name: ROLE_LABELS[key], permissions: DEFAULT_ROLE_PERMISSIONS[key] } })).id;

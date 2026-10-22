@@ -1,22 +1,21 @@
 # Local production-like stack: docker compose up --build
 services:
   db:
-    image: postgres:16
-    environment:
-      POSTGRES_USER: hotel
-      POSTGRES_PASSWORD: hotel
-      POSTGRES_DB: hotel
-    volumes: [pgdata:/var/lib/postgresql/data]
+    # Prisma needs MongoDB to run as a replica set (for transactions); a single-node set is enough.
+    image: mongo:7
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    volumes: [mongodata:/data/db]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hotel"]
+      # Initiates the replica set on first start, then reports healthy once it has a primary.
+      test: ["CMD", "mongosh", "--quiet", "--eval", "try { rs.status() } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'db:27017' }] }) } quit(db.hello().isWritablePrimary ? 0 : 1)"]
       interval: 5s
-      retries: 10
+      retries: 20
   app:
     build: .
     depends_on: { db: { condition: service_healthy } }
     ports: ["4000:4000"]
     environment:
-      DATABASE_URL: postgresql://hotel:hotel@db:5432/hotel?schema=public
+      DATABASE_URL: mongodb://db:27017/hotel?replicaSet=rs0
       APP_URL: http://localhost:4000
       API_URL: http://localhost:4000
       SESSION_SECRET: ${SESSION_SECRET:-local-compose-session-secret-please-change-0123}
@@ -26,5 +25,5 @@ services:
       TRUST_PROXY: 0
     volumes: [uploads:/app/server/uploads]
 volumes:
-  pgdata:
+  mongodata:
   uploads:

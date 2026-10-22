@@ -1,5 +1,5 @@
 /**
- * Demo data for The Aurelle. DESTRUCTIVE: wipes all tables first.
+ * Demo data for The Aurelle. DESTRUCTIVE: wipes all collections first.
  *   npm run db:seed
  * Refuses to run when NODE_ENV=production unless SEED_ALLOW_PRODUCTION=yes.
  * Staff demo password comes from SEED_STAFF_PASSWORD (a development default is used otherwise).
@@ -9,7 +9,8 @@ import {
   makeBookingReference, todayInZone, type Quote,
 } from '@aurelle/shared';
 import type { Prisma } from '@prisma/client';
-import { prisma } from '../config/prisma';
+import { ensureIndexes, prisma, wipeDatabase } from '../config/prisma';
+import { syncRoomNights } from '../services/availability.service';
 import { hashPassword } from '../services/auth.service';
 import { DEFAULT_PAGES } from '../content/pages';
 import { IMG } from '../content/images';
@@ -20,8 +21,8 @@ import { dbDate } from '../utils/dates';
 const R = (rupees: number) => rupees * 100; // to paise
 
 async function wipe() {
-  const tables = await prisma.$queryRaw<{ tablename: string }[]>`SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'`;
-  await prisma.$executeRawUnsafe(`TRUNCATE ${tables.map((t) => `"${t.tablename}"`).join(', ')} RESTART IDENTITY CASCADE`);
+  await wipeDatabase();
+  await ensureIndexes();
 }
 
 async function main() {
@@ -147,7 +148,6 @@ async function main() {
       { date: dbDate(`${year}-12-31`), name: "New Year's Eve", upliftBps: 4000 },
       { date: dbDate(`${year + 1}-03-22`), name: 'Holi', upliftBps: 2000 },
     ],
-    skipDuplicates: true,
   });
   await prisma.mealPlan.createMany({
     data: [
@@ -298,6 +298,7 @@ async function main() {
         events: { create: [{ type: 'CREATED', message: 'Booking created via website.', createdAt }] },
       },
     });
+    await syncRoomNights(prisma, b.id);
     if (paid > 0) {
       const payment = await prisma.payment.create({ data: { bookingId: b.id, provider: 'SANDBOX', providerOrderId: `order_sbx_seed_${b.reference}`, providerPaymentId: `pay_sbx_seed_${b.reference}`, amount: paid, status: cancelled ? 'REFUNDED' : 'CAPTURED', amountRefunded: cancelled ? paid : 0, method: 'card', isTest: true, capturedAt: createdAt, createdAt } });
       if (cancelled) await prisma.refund.create({ data: { paymentId: payment.id, bookingId: b.id, amount: paid, status: 'PROCESSED', providerRefundId: `rfnd_sbx_seed_${b.reference}`, reason: 'Free cancellation', processedAt: new Date(createdAt.getTime() + 2 * 86_400_000) } });

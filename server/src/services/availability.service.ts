@@ -1,5 +1,5 @@
 import { addDays, eachNight, todayInZone } from '@aurelle/shared';
-import { Prisma, prisma, type Db, type Tx } from '../config/prisma';
+import { Prisma, isUniqueViolation, prisma, type Db, type Tx } from '../config/prisma';
 import { dbDate, isoOf } from '../utils/dates';
 
 export interface TypeAvailability {
@@ -97,9 +97,27 @@ export async function nightlyInventory(db: Db, from: string, to: string, roomTyp
   return out;
 }
 
-/** Serializes concurrent allocations for the same room type within the current transaction. */
+/**
+ * Serializes concurrent allocations for the same room type: both transactions write the same lock document, so
+ * MongoDB aborts one with a write conflict and `runTransaction` retries it against the committed state.
+ */
 export async function lockRoomType(tx: Tx, roomTypeId: string) {
-  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${'roomtype:' + roomTypeId}))::text`;
+  await tx.inventoryLock.upsert({ where: { id: roomTypeId }, create: { id: roomTypeId, version: 1 }, update: { version: { increment: 1 } } });
+}
+
+/**
+ * Mirrors the active allocations of the given bookings into room_nights (one document per room per night).
+ * Its unique (roomId, date) index rejects any overlap, so call this after every change to booking_rooms.
+ */
+export async function syncRoomNights(db: Db, bookingIds: string | string[]) {
+  const ids = Array.isArray(bookingIds) ? bookingIds : [bookingIds];
+  if (!ids.length) return;
+  await db.roomNight.deleteMany({ where: { bookingId: { in: ids } } });
+  const active = await db.bookingRoom.findMany({ where: { bookingId: { in: ids }, active: true } });
+  const data = active.flatMap((a) =>
+    eachNight(isoOf(a.checkIn), isoOf(a.checkOut)).map((date) => ({ roomId: a.roomId, date: dbDate(date), bookingId: a.bookingId, bookingRoomId: a.id })),
+  );
+  if (data.length) await db.roomNight.createMany({ data });
 }
 
 /** Expires lapsed unpaid holds and frees their rooms. Safe to call repeatedly. */
@@ -111,6 +129,7 @@ export async function releaseExpiredHolds(db: Db, roomTypeId?: string): Promise<
   if (!expired.length) return 0;
   const ids = expired.map((b) => b.id);
   await db.bookingRoom.updateMany({ where: { bookingId: { in: ids } }, data: { active: false } });
+  await db.roomNight.deleteMany({ where: { bookingId: { in: ids } } });
   await db.booking.updateMany({ where: { id: { in: ids }, status: 'PENDING_PAYMENT' }, data: { status: 'EXPIRED', holdExpiresAt: null } });
   await db.bookingEvent.createMany({ data: ids.map((bookingId) => ({ bookingId, type: 'EXPIRED', message: 'Payment hold expired; rooms released.' })) });
   // Coupon usage held by expired bookings is returned.
@@ -122,8 +141,8 @@ export async function releaseExpiredHolds(db: Db, roomTypeId?: string): Promise<
   return ids.length;
 }
 
-export const isOverlapViolation = (err: unknown) =>
-  err instanceof Error && /booking_rooms_no_overlap|23P01|exclusion constraint/i.test(err.message);
+/** True when an allocation hit the room_nights unique index, i.e. the room is already sold for one of the nights. */
+export const isOverlapViolation = (err: unknown) => isUniqueViolation(err, /room_nights/);
 
 export async function hotelToday(db: Db = prisma, timezone?: string) {
   void db;

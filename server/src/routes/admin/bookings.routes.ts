@@ -93,7 +93,7 @@ adminBookingsRouter.get('/export.csv', requirePermission('bookings.export'), ah(
 adminBookingsRouter.get('/:id', requirePermission('bookings.view'), ah(async (req, res) => {
   const b = await prisma.booking.findUnique({
     where: { id: req.params.id },
-    include: { ...bookingInclude, notes: { include: { author: { select: { name: true } } }, orderBy: { createdAt: 'desc' } }, events: { orderBy: { createdAt: 'desc' } }, user: { select: { id: true, name: true, email: true } }, review: true },
+    include: { ...bookingInclude, notes: { include: { author: { select: { name: true } } }, orderBy: { createdAt: 'desc' } }, events: { orderBy: { createdAt: 'desc' } }, user: { select: { id: true, name: true, email: true } }, reviews: { take: 1 } },
   });
   if (!b) throw AppError.notFound('Reservation');
   const showPayments = can(req.user, 'payments.view');
@@ -104,6 +104,8 @@ adminBookingsRouter.get('/:id', requirePermission('bookings.view'), ah(async (re
   const config = (await getPublishedConfig()).config;
   res.json({
     ...b,
+    reviews: undefined,
+    review: b.reviews[0] ?? null,
     checkIn: isoOf(b.checkIn), checkOut: isoOf(b.checkOut),
     statusLabel: BOOKING_STATUS_LABEL[b.status as BookingStatus],
     manageTokenHash: undefined,

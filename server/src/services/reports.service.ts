@@ -85,21 +85,26 @@ export async function dashboard(range: Range) {
   };
 }
 
-/** Bookings created and revenue collected per day. */
+/** Bookings created and revenue collected per hotel-local (IST) day. */
 export async function dailySeries(range: Range) {
   const ts = tsBounds(range);
-  const [bookings, revenue] = await Promise.all([
-    prisma.$queryRaw<{ day: Date; count: bigint; value: bigint }[]>`
-      SELECT date_trunc('day', "createdAt" AT TIME ZONE 'Asia/Kolkata')::date AS day, count(*) AS count, coalesce(sum("grandTotal"),0) AS value
-      FROM bookings WHERE "createdAt" >= ${ts.gte} AND "createdAt" < ${ts.lt} AND status NOT IN ('EXPIRED') GROUP BY 1`,
-    prisma.$queryRaw<{ day: Date; amount: bigint }[]>`
-      SELECT date_trunc('day', "capturedAt" AT TIME ZONE 'Asia/Kolkata')::date AS day, coalesce(sum(amount),0) AS amount
-      FROM payments WHERE status IN ('CAPTURED','PARTIALLY_REFUNDED','REFUNDED') AND "capturedAt" >= ${ts.gte} AND "capturedAt" < ${ts.lt} GROUP BY 1`,
+  const [bookings, payments] = await Promise.all([
+    prisma.booking.findMany({ where: { createdAt: ts, status: { not: 'EXPIRED' } }, select: { createdAt: true, grandTotal: true } }),
+    prisma.payment.findMany({ where: { status: { in: ['CAPTURED', 'PARTIALLY_REFUNDED', 'REFUNDED'] }, capturedAt: ts }, select: { capturedAt: true, amount: true } }),
   ]);
-  const days = eachNight(range.from, addDays(range.to, 1));
-  const bMap = new Map(bookings.map((r) => [isoOf(r.day), r]));
-  const rMap = new Map(revenue.map((r) => [isoOf(r.day), Number(r.amount)]));
-  return days.map((d) => ({ date: d, bookings: Number(bMap.get(d)?.count ?? 0), bookedValue: Number(bMap.get(d)?.value ?? 0), revenue: rMap.get(d) ?? 0 }));
+  const series = new Map(eachNight(range.from, addDays(range.to, 1)).map((d) => [d, { date: d, bookings: 0, bookedValue: 0, revenue: 0 }]));
+  for (const b of bookings) {
+    const day = series.get(todayInZone('Asia/Kolkata', b.createdAt));
+    if (day) {
+      day.bookings += 1;
+      day.bookedValue += b.grandTotal;
+    }
+  }
+  for (const p of payments) {
+    const day = p.capturedAt && series.get(todayInZone('Asia/Kolkata', p.capturedAt));
+    if (day) day.revenue += p.amount;
+  }
+  return Array.from(series.values());
 }
 
 /** Room-nights sold vs available per day for stays within the range. */

@@ -1,6 +1,6 @@
 import { defaultSectionProps, pageContentSchema, pageDraftSchema, SECTION_REGISTRY, type SectionType } from '@aurelle/shared';
 import type { Prisma } from '@prisma/client';
-import { prisma } from '../config/prisma';
+import { prisma, runTransaction } from '../config/prisma';
 import { AppError } from '../utils/http';
 import { defaultPage, defaultSection } from '../content/pages';
 
@@ -42,7 +42,7 @@ export async function publishPage(id: string, userId: string) {
     throw new AppError(422, 'INVALID_CONTENT', `Cannot publish: ${section ? `section “${SECTION_REGISTRY[section.type as SectionType]?.label ?? section.type}” — ` : ''}${issue.message} (${issue.path.slice(2).join('.')})`, { issues: result.error.issues.slice(0, 10) });
   }
   const content = result.data as unknown as Prisma.InputJsonValue;
-  return prisma.$transaction(async (tx) => {
+  return runTransaction(async (tx) => {
     await tx.pageRevision.create({ data: { pageId: id, data: content, note: 'Published', createdById: userId } });
     // Keep the 30 most recent revisions.
     const old = await tx.pageRevision.findMany({ where: { pageId: id }, orderBy: { createdAt: 'desc' }, skip: 30, select: { id: true } });

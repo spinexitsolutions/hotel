@@ -27,5 +27,5 @@ RUN mkdir -p /app/server/uploads && chown -R node:node /app/server/uploads
 USER node
 EXPOSE 4000
 HEALTHCHECK --interval=30s --timeout=5s CMD node -e "fetch('http://localhost:4000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-# Apply pending migrations, then start.
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]
+# Sync MongoDB indexes with the Prisma schema (data is never dropped), then start.
+CMD ["sh", "-c", "npx prisma db push --skip-generate && node dist/index.js"]

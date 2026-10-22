@@ -1,11 +1,11 @@
 import type { Request } from 'express';
 import { formatMoney } from '@aurelle/shared';
-import { Prisma, prisma } from '../config/prisma';
+import { Prisma, prisma, runTransaction } from '../config/prisma';
 import { logger } from '../config/logger';
 import { AppError } from '../utils/http';
 import { paymentProvider } from './payments';
 import type { ParsedWebhook } from './payments/provider';
-import { availabilityForStay, isOverlapViolation, lockRoomType, releaseExpiredHolds } from './availability.service';
+import { availabilityForStay, isOverlapViolation, lockRoomType, releaseExpiredHolds, syncRoomNights } from './availability.service';
 import { getBookingSettings } from './settings.service';
 import { emailBooking, bookingInclude } from './booking.service';
 import { getBrand, queueEmail, sendEmail, templates } from './email';
@@ -51,8 +51,8 @@ export async function startPayment(reference: string) {
  */
 export async function capturePayment(providerOrderId: string, providerPaymentId: string, method = '') {
   const settings = await getBookingSettings();
-  const outcome = await prisma.$transaction(async (tx) => {
-    const payment = await tx.payment.findUnique({ where: { providerOrderId } });
+  const outcome = await runTransaction(async (tx) => {
+    const payment = await tx.payment.findFirst({ where: { providerOrderId } });
     if (!payment) throw AppError.notFound('Payment order');
     const claimed = await tx.payment.updateMany({
       where: { id: payment.id, status: { in: ['CREATED', 'FAILED'] } },
@@ -75,6 +75,7 @@ export async function capturePayment(providerOrderId: string, providerPaymentId:
         if (avail && !avail.closed && avail.available >= b.roomsCount) {
           await tx.bookingRoom.deleteMany({ where: { bookingId: b.id } });
           await tx.bookingRoom.createMany({ data: avail.freeRoomIds.slice(0, b.roomsCount).map((roomId) => ({ bookingId: b.id, roomId, checkIn: b.checkIn, checkOut: b.checkOut })) });
+          await syncRoomNights(tx, b.id);
           roomsOk = true;
         }
       }
@@ -123,7 +124,7 @@ export async function capturePayment(providerOrderId: string, providerPaymentId:
 }
 
 export async function verifyBrowserPayment(input: { bookingReference: string; providerOrderId: string; providerPaymentId: string; signature: string }) {
-  const payment = await prisma.payment.findUnique({ where: { providerOrderId: input.providerOrderId }, include: { booking: { select: { reference: true } } } });
+  const payment = await prisma.payment.findFirst({ where: { providerOrderId: input.providerOrderId }, include: { booking: { select: { reference: true } } } });
   if (!payment || payment.booking.reference !== input.bookingReference.toUpperCase()) throw AppError.notFound('Payment order');
   if (!paymentProvider.verifyPaymentSignature(input.providerOrderId, input.providerPaymentId, input.signature)) {
     logger.warn({ order: input.providerOrderId }, 'payment signature mismatch');
@@ -133,7 +134,7 @@ export async function verifyBrowserPayment(input: { bookingReference: string; pr
 }
 
 export async function recordPaymentFailure(input: { bookingReference: string; providerOrderId: string; code?: string; description?: string }) {
-  const payment = await prisma.payment.findUnique({ where: { providerOrderId: input.providerOrderId }, include: { booking: true } });
+  const payment = await prisma.payment.findFirst({ where: { providerOrderId: input.providerOrderId }, include: { booking: true } });
   if (!payment || payment.booking.reference !== input.bookingReference.toUpperCase()) throw AppError.notFound('Payment order');
   const updated = await prisma.payment.updateMany({ where: { id: payment.id, status: 'CREATED' }, data: { status: 'FAILED', errorCode: input.code?.slice(0, 100) ?? 'FAILED', errorDescription: input.description?.slice(0, 500) ?? 'Payment failed' } });
   if (updated.count) {
@@ -161,13 +162,13 @@ export async function handleWebhook(rawBody: Buffer, signature: string, headers:
   }
 
   if ((evt.type === 'payment.captured' || evt.type === 'order.paid') && evt.orderId && evt.paymentId) {
-    const exists = await prisma.payment.findUnique({ where: { providerOrderId: evt.orderId } });
+    const exists = await prisma.payment.findFirst({ where: { providerOrderId: evt.orderId } });
     if (exists) await capturePayment(evt.orderId, evt.paymentId, evt.method ?? '');
   } else if (evt.type === 'payment.failed' && evt.orderId) {
-    const p = await prisma.payment.findUnique({ where: { providerOrderId: evt.orderId }, include: { booking: true } });
+    const p = await prisma.payment.findFirst({ where: { providerOrderId: evt.orderId }, include: { booking: true } });
     if (p) await recordPaymentFailure({ bookingReference: p.booking.reference, providerOrderId: evt.orderId, code: evt.errorCode, description: evt.errorDescription });
   } else if ((evt.type === 'refund.processed' || evt.type === 'refund.failed') && evt.refundId) {
-    const r = await prisma.refund.findUnique({ where: { providerRefundId: evt.refundId } });
+    const r = await prisma.refund.findFirst({ where: { providerRefundId: evt.refundId } });
     if (r && r.status !== 'PROCESSED') {
       const ok = evt.type === 'refund.processed';
       await prisma.refund.update({ where: { id: r.id }, data: { status: ok ? 'PROCESSED' : 'FAILED', processedAt: ok ? new Date() : null } });
@@ -219,7 +220,7 @@ export async function refundBooking(bookingId: string, input: { amount: number; 
         throw new AppError(502, 'REFUND_FAILED', 'The payment gateway rejected the refund. No money was refunded. Please try again or refund manually.');
       }
     }
-    await prisma.$transaction(async (tx) => {
+    await runTransaction(async (tx) => {
       await tx.refund.create({ data: { paymentId: p.id, bookingId, amount, status, providerRefundId, reason: input.reason, initiatedById: req.user?.id, processedAt: status === 'PROCESSED' ? new Date() : null } });
       const newRefunded = p.amountRefunded + amount;
       await tx.payment.update({ where: { id: p.id }, data: { amountRefunded: newRefunded, status: newRefunded >= p.amount ? 'REFUNDED' : 'PARTIALLY_REFUNDED' } });

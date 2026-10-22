@@ -9,7 +9,7 @@ A complete, production-ready platform for a five-star hotel:
   - Razorpay payments, or a clearly labelled test-mode sandbox.
   - Confirmation emails, guest self-service cancellation, and refunds.
 - **Admin panel at `/admin`**: dashboard, reservations, front-desk calendar, rooms and inventory, pricing, offers, customers, inquiries, reviews, CMS page builder, theme builder, media library, journal, FAQ, gallery, newsletter, reports, staff and roles, audit log, and settings.
-- **Edit nearly everything without code**: theme, brand, navigation, footer, page sections, imagery, rooms, rates, offers, policies and SEO. All of it is stored in PostgreSQL, previewed as a draft and published instantly.
+- **Edit nearly everything without code**: theme, brand, navigation, footer, page sections, imagery, rooms, rates, offers, policies and SEO. All of it is stored in MongoDB, previewed as a draft and published instantly.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design. The other docs:
 - [docs/API.md](docs/API.md): endpoint reference
@@ -22,22 +22,27 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design. The other docs:
 | Part | Technologies |
 |---|---|
 | Web | React 19, Vite, TypeScript, Tailwind CSS, Motion, Lenis, React Three Fiber, TanStack Query, react-hook-form + zod, Recharts |
-| API | Node 20+, Express, Prisma 6, PostgreSQL 16, zod, sharp, nodemailer/Resend |
+| API | Node 20+, Express, Prisma 6, MongoDB (replica set / Atlas), zod, sharp, nodemailer/Resend |
 | Shared | `@aurelle/shared`: pricing engine, validation schemas, CMS section registry, theme tokens and permissions, used by both sides |
 
 ## Quick start (local development)
 
-Requirements: Node 20.11+ and PostgreSQL 14+ (or Docker).
+Requirements: Node 20.11+ and MongoDB 6+ running as a **replica set** (Prisma needs transactions).
+The easiest option is a free [MongoDB Atlas](https://www.mongodb.com/cloud/atlas) M0 cluster; Atlas clusters are already replica sets.
 
 ```bash
-# 1. Database (skip if you have PostgreSQL running)
-docker run -d --name aurelle-db -e POSTGRES_USER=hotel -e POSTGRES_PASSWORD=hotel -e POSTGRES_DB=hotel -p 5432:5432 postgres:16
+# 1. Database. Either:
+#    a) MongoDB Atlas: create a free cluster, add a database user, allow your IP (Network Access),
+#       then Connect → Drivers and copy the mongodb+srv://… URI, or
+#    b) local Docker (single-node replica set):
+docker run -d --name aurelle-db -p 27017:27017 mongo:7 --replSet rs0 --bind_ip_all
+docker exec aurelle-db mongosh --quiet --eval "rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'localhost:27017' }] })"
 
 # 2. Install & configure
 npm install
-cp .env.example server/.env          # edit if your database URL differs
+cp .env.example server/.env          # set DATABASE_URL (Atlas: add /hotel before the "?")
 
-# 3. Create the schema and load the demo hotel (wipes the database!)
+# 3. Create the indexes and load the demo hotel (wipes the database!)
 npm run db:deploy
 npm run db:seed
 
@@ -70,21 +75,21 @@ Open http://localhost:5173 for the website and http://localhost:5173/admin for t
 |---|---|
 | `npm run dev` | API + website with hot reload |
 | `npm run typecheck` | TypeScript across all workspaces |
-| `npm test` | Shared pricing tests, API integration tests (needs PostgreSQL database `hotel_test`) and web tests |
+| `npm test` | Shared pricing tests, API integration tests (needs a MongoDB replica set; uses database `hotel_test`) and web tests |
 | `npm run build` | Production build of API (`server/dist`) and website (`web/dist`) |
-| `npm run db:migrate` | Create a new migration while developing (`prisma migrate dev`) |
-| `npm run db:deploy` | Apply migrations (safe for production) |
+| `npm run db:deploy` | Sync collections and indexes with the Prisma schema (`prisma db push` + partial unique indexes; never drops data) |
 | `npm run db:seed` | **Wipe** and load demo data (refuses in production) |
 | `npm run create-admin` | Create or promote a Super Admin |
 
 ### Running the tests
 
 ```bash
-createdb -U hotel hotel_test          # once; or: CREATE DATABASE hotel_test OWNER hotel;
+# Defaults to mongodb://localhost:27017/hotel_test?replicaSet=rs0&directConnection=true (the Docker set-up above).
+# Point TEST_DATABASE_URL elsewhere if needed; the database name must contain "test" because the tests wipe it.
 npm test
 ```
 
-The API tests run against a real PostgreSQL database, so the overbooking constraint, transactions and concurrency are exercised for real. They cover:
+The API tests run against a real MongoDB replica set, so the overbooking index, transactions and concurrency are exercised for real. They cover:
 - concurrent overbooking and hold expiry
 - invalid dates and occupancy rules
 - price-change detection and coupon races
@@ -96,7 +101,7 @@ The API tests run against a real PostgreSQL database, so the overbooking constra
 
 ```
 shared/   pricing engine, zod schemas, CMS section registry, theme, permissions (+ tests)
-server/   Express API, Prisma schema & migrations, services, routes, jobs, seed (+ integration tests)
+server/   Express API, Prisma schema, services, routes, jobs, seed (+ integration tests)
 web/      public website (src/pages, src/sections, src/components) and admin panel (src/admin)
 docs/     architecture, API, deployment, security, admin guide
 ```

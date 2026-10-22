@@ -3,13 +3,13 @@ import {
   type BookingSettings, type BookingStatus, type CreateBookingInput,
 } from '@aurelle/shared';
 import type { Request } from 'express';
-import { Prisma, prisma, type Tx } from '../config/prisma';
+import { Prisma, prisma, runTransaction, type Tx } from '../config/prisma';
 import { env } from '../config/env';
 import { logger } from '../config/logger';
 import { AppError } from '../utils/http';
 import { randomToken, sha256 } from '../utils/crypto';
 import { dbDate, isoOf } from '../utils/dates';
-import { availabilityForStay, isOverlapViolation, lockRoomType, releaseExpiredHolds } from './availability.service';
+import { availabilityForStay, isOverlapViolation, lockRoomType, releaseExpiredHolds, syncRoomNights } from './availability.service';
 import { assertBookingWindow, buildQuote, type QuoteContext } from './quote.service';
 import { getBookingSettings } from './settings.service';
 import { getBrand, queueEmail, sendEmail, templates } from './email';
@@ -106,7 +106,7 @@ export interface CreateBookingOptions {
 
 /**
  * Creates a booking atomically: validates policy, re-prices from the database, locks the room type,
- * allocates physical rooms (guarded by the DB exclusion constraint) and records line items, guests and
+ * allocates physical rooms (guarded by the room_nights unique index) and records line items, guests and
  * coupon redemption. Payment (if online) is started separately so no network call happens inside the lock.
  */
 export async function createBooking(input: CreateBookingInput, opts: CreateBookingOptions = {}) {
@@ -121,7 +121,7 @@ export async function createBooking(input: CreateBookingInput, opts: CreateBooki
 
   let created: { id: string; reference: string };
   try {
-    created = await prisma.$transaction(async (tx) => {
+    created = await runTransaction(async (tx) => {
       await lockRoomType(tx, input.roomTypeId);
       await releaseExpiredHolds(tx, input.roomTypeId);
 
@@ -192,6 +192,7 @@ export async function createBooking(input: CreateBookingInput, opts: CreateBooki
         },
         select: { id: true, reference: true },
       });
+      await syncRoomNights(tx, b.id);
 
       if (ctx.coupon) {
         // Conditional increment: fails if a concurrent booking consumed the last use.
@@ -304,7 +305,7 @@ export async function cancelBooking(
   opts: { by: 'GUEST' | 'STAFF' | 'SYSTEM'; reason: string; waivePenalty?: boolean; notifyGuest?: boolean; req?: Request },
 ) {
   const settings = await getBookingSettings();
-  const result = await prisma.$transaction(async (tx) => {
+  const result = await runTransaction(async (tx) => {
     const b = await tx.booking.findUniqueOrThrow({ where: { id: bookingId } });
     if (!['PENDING_PAYMENT', 'PENDING', 'CONFIRMED'].includes(b.status)) throw AppError.conflict(`A ${BOOKING_STATUS_LABEL[b.status as BookingStatus].toLowerCase()} reservation cannot be cancelled.`, 'INVALID_STATUS');
     const today = todayInZone(settings.timezone);
@@ -319,6 +320,7 @@ export async function cancelBooking(
       : cancellationOutcome(settings.cancellation, { grandTotal: b.grandTotal, amountPaid: paidNet, firstNightAmount: firstNightAmount(b), daysBeforeArrival: diffDays(today, checkIn) });
 
     await tx.bookingRoom.updateMany({ where: { bookingId }, data: { active: false } });
+    await syncRoomNights(tx, bookingId);
     const redemption = await tx.couponRedemption.findUnique({ where: { bookingId } });
     if (redemption) {
       await tx.couponRedemption.delete({ where: { id: redemption.id } });
@@ -354,7 +356,7 @@ export async function cancelBooking(
 export async function changeStatus(bookingId: string, next: BookingStatus, opts: { reason?: string; notifyGuest?: boolean; req: Request }) {
   const settings = await getBookingSettings();
   const today = todayInZone(settings.timezone);
-  const b = await prisma.$transaction(async (tx) => {
+  const b = await runTransaction(async (tx) => {
     const cur = await tx.booking.findUniqueOrThrow({ where: { id: bookingId }, include: { rooms: true } });
     const allowed = BOOKING_TRANSITIONS[cur.status as BookingStatus];
     if (!allowed.includes(next)) throw AppError.conflict(`Cannot change a ${BOOKING_STATUS_LABEL[cur.status as BookingStatus].toLowerCase()} reservation to ${BOOKING_STATUS_LABEL[next].toLowerCase()}.`, 'INVALID_TRANSITION');
@@ -372,10 +374,14 @@ export async function changeStatus(bookingId: string, next: BookingStatus, opts:
     if (next === 'CHECKED_OUT') {
       data.checkedOutAt = new Date();
       // Early departure frees the remaining nights.
-      if (today < checkOut && today > checkIn) await tx.bookingRoom.updateMany({ where: { bookingId, active: true }, data: { checkOut: dbDate(today) } });
+      if (today < checkOut && today > checkIn) {
+        await tx.bookingRoom.updateMany({ where: { bookingId, active: true }, data: { checkOut: dbDate(today) } });
+        await syncRoomNights(tx, bookingId);
+      }
     }
     if (next === 'REJECTED' || next === 'NO_SHOW') {
       await tx.bookingRoom.updateMany({ where: { bookingId }, data: { active: false } });
+      await syncRoomNights(tx, bookingId);
       data.cancellationReason = opts.reason ?? null;
       data.cancelledAt = new Date();
       data.cancelledBy = 'STAFF';
@@ -399,9 +405,10 @@ export async function changeStatus(bookingId: string, next: BookingStatus, opts:
 
 export async function assignRooms(bookingId: string, assignments: { bookingRoomId: string; roomId: string }[], req: Request) {
   try {
-    await prisma.$transaction(async (tx) => {
+    await runTransaction(async (tx) => {
       const b = await tx.booking.findUniqueOrThrow({ where: { id: bookingId }, include: { rooms: true } });
       await lockRoomType(tx, b.roomTypeId);
+      await releaseExpiredHolds(tx, b.roomTypeId);
       for (const a of assignments) {
         const br = b.rooms.find((r) => r.id === a.bookingRoomId);
         if (!br || !br.active) throw AppError.badRequest('Unknown room allocation.');
@@ -413,6 +420,7 @@ export async function assignRooms(bookingId: string, assignments: { bookingRoomI
         await tx.bookingRoom.update({ where: { id: br.id }, data: { roomId: room.id } });
         await tx.bookingEvent.create({ data: { bookingId, type: 'ROOM_ASSIGNED', message: `Assigned room ${room.number}.`, actorId: req.user?.id } });
       }
+      await syncRoomNights(tx, bookingId);
     }, TX_OPTS);
   } catch (err) {
     if (isOverlapViolation(err)) throw AppError.conflict('That room is already occupied on these dates.', 'ROOM_OCCUPIED');
@@ -425,7 +433,7 @@ export async function assignRooms(bookingId: string, assignments: { bookingRoomI
 export async function modifyBooking(bookingId: string, input: { checkIn: string; checkOut: string; adults: number; children: number; reason: string; repriced: boolean }, req: Request) {
   const settings = await getBookingSettings();
   try {
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await runTransaction(async (tx) => {
       const b = await tx.booking.findUniqueOrThrow({ where: { id: bookingId }, include: { rooms: true, lineItems: true } });
       if (!['PENDING_PAYMENT', 'PENDING', 'CONFIRMED'].includes(b.status)) throw AppError.conflict('Only upcoming reservations can be modified.', 'INVALID_STATUS');
       await lockRoomType(tx, b.roomTypeId);
@@ -438,6 +446,7 @@ export async function modifyBooking(bookingId: string, input: { checkIn: string;
       const roomIds = pickRooms(avail.freeRoomIds, b.roomsCount, previousRoomIds);
       await tx.bookingRoom.deleteMany({ where: { bookingId } });
       await tx.bookingRoom.createMany({ data: roomIds.map((roomId) => ({ bookingId, roomId, checkIn: dbDate(input.checkIn), checkOut: dbDate(input.checkOut) })) });
+      await syncRoomNights(tx, bookingId);
 
       const data: Prisma.BookingUpdateInput = {
         checkIn: dbDate(input.checkIn), checkOut: dbDate(input.checkOut), nights: diffDays(input.checkIn, input.checkOut), adults: input.adults, children: input.children,
@@ -473,7 +482,7 @@ export async function modifyBooking(bookingId: string, input: { checkIn: string;
 
 export async function recordOfflinePayment(bookingId: string, input: { amount: number; method: string; reference: string }, req: Request) {
   const settings = await getBookingSettings();
-  const b = await prisma.$transaction(async (tx) => {
+  const b = await runTransaction(async (tx) => {
     const cur = await tx.booking.findUniqueOrThrow({ where: { id: bookingId } });
     if (['CANCELLED', 'REJECTED', 'EXPIRED'].includes(cur.status)) throw AppError.conflict('Cannot record a payment against an inactive reservation.');
     const balance = cur.grandTotal - (cur.amountPaid - cur.amountRefunded);

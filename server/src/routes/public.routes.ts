@@ -296,7 +296,7 @@ publicRouter.post('/reviews', formLimiter, validate(reviewSubmitSchema), ah(asyn
   const b = req.body as ReturnType<typeof reviewSubmitSchema.parse>;
   const booking = await findBookingForGuest(b.bookingReference, { token: str(req.query.token) ?? str(req.body.token), user: req.user });
   if (booking.status !== 'CHECKED_OUT') throw AppError.conflict('Reviews can be shared after your stay.');
-  const exists = await prisma.review.findUnique({ where: { bookingId: booking.id } });
+  const exists = await prisma.review.findFirst({ where: { bookingId: booking.id } });
   if (exists) throw AppError.conflict('You have already reviewed this stay. Thank you!');
   await prisma.review.create({
     data: {

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { prisma } from '../src/config/prisma';
-import { releaseExpiredHolds } from '../src/services/availability.service';
+import { isOverlapViolation, releaseExpiredHolds } from '../src/services/availability.service';
 import { agent, bookingBody, future, login, resetFixtures, today } from './helpers';
 import { addDays } from '@aurelle/shared';
 
@@ -94,13 +94,23 @@ describe('overbooking protection', () => {
     expect(overlap.status).toBe(409);
   });
 
-  it('is enforced by the database exclusion constraint even outside the service', async () => {
+  it('is enforced by the room_nights unique index even outside the service', async () => {
     const a = await agent();
     await a.post('/api/bookings', bookingBody(roomTypeId));
-    const existing = await prisma.bookingRoom.findFirstOrThrow({ include: { booking: true } });
-    await expect(
-      prisma.bookingRoom.create({ data: { bookingId: existing.bookingId, roomId: existing.roomId, checkIn: existing.checkIn, checkOut: existing.checkOut } }),
-    ).rejects.toThrow(/booking_rooms_no_overlap|exclusion/i);
+    const night = await prisma.roomNight.findFirstOrThrow();
+    expect(await prisma.roomNight.count()).toBe(2); // 2 nights × 1 room
+    const err = await prisma.roomNight.create({ data: { roomId: night.roomId, date: night.date, bookingId: 'other', bookingRoomId: 'other' } }).catch((e: unknown) => e);
+    expect(isOverlapViolation(err)).toBe(true);
+  });
+
+  it('never oversells under concurrent requests', async () => {
+    const guests = await Promise.all(Array.from({ length: 6 }, () => agent()));
+    const results = await Promise.all(
+      guests.map((g, i) => g.post('/api/bookings', bookingBody(roomTypeId, { guest: { firstName: 'C', lastName: String(i), email: `c${i}@x.com`, phone: '+91 9000000000' } }))),
+    );
+    expect(results.filter((r) => r.status === 201)).toHaveLength(2);
+    expect(results.filter((r) => r.status === 409)).toHaveLength(4);
+    expect(await prisma.roomNight.count()).toBe(4);
   });
 
   it('releases inventory when an unpaid hold expires', async () => {
