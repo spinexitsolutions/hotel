@@ -164,7 +164,7 @@ export default function AdminApp() {
     <nav className="flex h-full flex-col" aria-label="Admin">
       <div className="flex h-16 items-center gap-3 border-b border-white/10 px-5">
         <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-600/90 font-serif text-lg text-white">A</span>
-        <div><p className="text-sm font-semibold text-white">The Aurelle</p><p className="text-[11px] text-zinc-400">Hotel management</p></div>
+        <div><p className="text-sm font-semibold text-white">Rambagh Palace</p><p className="text-[11px] text-zinc-400">Hotel management</p></div>
       </div>
       <div className="flex-1 overflow-y-auto px-3 py-4">
         {nav.map((g) => (
@@ -186,7 +186,7 @@ export default function AdminApp() {
 
   return (
     <div className="admin-root min-h-screen bg-zinc-50 text-zinc-900" style={{ fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif', fontWeight: 400, lineHeight: 1.5 }}>
-      <title>Admin · The Aurelle</title>
+      <title>Admin · Rambagh Palace concept</title>
       <meta name="robots" content="noindex, nofollow" />
       <aside className="no-print fixed inset-y-0 left-0 z-40 hidden w-60 bg-zinc-950 lg:block">{sidebar}</aside>
       {mobileNav && (

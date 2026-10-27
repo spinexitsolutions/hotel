@@ -109,7 +109,7 @@ export default function ReportsPage() {
       <style media="print">{`aside, .lg\\:pl-60 > header { display: none !important; } .lg\\:pl-60 { padding-left: 0 !important; } main { max-width: none !important; padding: 0 !important; } .admin-card { break-inside: avoid; box-shadow: none !important; }`}</style>
       <PageHeader
         title="Reports"
-        description="Operational and financial reporting for The Aurelle."
+        description="Operational and financial reporting for the Rambagh Palace concept."
         actions={
           <div className="no-print flex flex-wrap items-center gap-2">
             <a className={cn('admin-btn-secondary', customIncomplete && 'pointer-events-none opacity-50')} href={csvHref} download aria-disabled={customIncomplete || undefined}>

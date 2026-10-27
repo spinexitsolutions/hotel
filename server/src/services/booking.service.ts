@@ -83,7 +83,7 @@ function pickRooms(freeRoomIds: string[], count: number, prefer: string[] = []):
 
 async function uniqueReference(tx: Tx): Promise<string> {
   for (let i = 0; i < 8; i++) {
-    const ref = makeBookingReference('AUR');
+    const ref = makeBookingReference('RBP');
     const exists = await tx.booking.findUnique({ where: { reference: ref }, select: { id: true } });
     if (!exists) return ref;
   }
