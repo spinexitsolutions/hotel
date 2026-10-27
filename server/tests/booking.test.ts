@@ -18,7 +18,7 @@ describe('booking creation', () => {
     expect(res.status).toBe(201);
     const b = res.body.booking;
     expect(b.status).toBe('PENDING_PAYMENT');
-    expect(b.reference).toMatch(/^AUR-[A-Z0-9]{6}$/);
+    expect(b.reference).toMatch(/^RBP-[A-Z0-9]{6}$/);
     // 2 nights × ₹10,000 + 18% GST (above ₹7,500 slab)
     expect(b.grandTotal).toBe(23_600_00);
     expect(res.body.payment.orderId).toMatch(/^order_sbx_/);

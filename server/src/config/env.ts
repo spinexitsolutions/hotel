@@ -13,6 +13,8 @@ const schema = z
     TRUST_PROXY: z.coerce.number().int().min(0).default(1),
     SERVE_WEB: z.enum(['true', 'false']).default('false'),
 
+    // Portfolio concept of a real hotel (Rambagh Palace): real payments stay off unless explicitly turned off.
+    CONCEPT_DEMO: z.enum(['true', 'false']).default('true'),
     PAYMENT_PROVIDER: z.enum(['razorpay', 'sandbox']).default('sandbox'),
     RAZORPAY_KEY_ID: z.string().default(''),
     RAZORPAY_KEY_SECRET: z.string().default(''),
@@ -20,7 +22,7 @@ const schema = z
     SANDBOX_PAYMENT_SECRET: z.string().default('sandbox-secret-change-me-please-0000'),
 
     EMAIL_PROVIDER: z.enum(['log', 'smtp', 'resend']).default('log'),
-    EMAIL_FROM: z.string().default('The Aurelle <reservations@theaurelle.example>'),
+    EMAIL_FROM: z.string().default('Rambagh Palace concept <reservations@rambagh-concept.example>'),
     SMTP_HOST: z.string().default(''),
     SMTP_PORT: z.coerce.number().int().default(587),
     SMTP_USER: z.string().default(''),
@@ -36,9 +38,13 @@ const schema = z
     CLOUDINARY_API_SECRET: z.string().default(''),
 
     JOBS_ENABLED: z.enum(['true', 'false']).default('true'),
+    SEED_DEMO_ON_EMPTY: z.enum(['true', 'false']).default('false'),
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   })
   .superRefine((e, ctx) => {
+    if (e.CONCEPT_DEMO === 'true' && e.PAYMENT_PROVIDER !== 'sandbox') {
+      ctx.addIssue({ code: 'custom', path: ['PAYMENT_PROVIDER'], message: 'CONCEPT_DEMO=true: this portfolio concept may only use the sandbox payment provider' });
+    }
     if (e.PAYMENT_PROVIDER === 'razorpay' && (!e.RAZORPAY_KEY_ID || !e.RAZORPAY_KEY_SECRET)) {
       ctx.addIssue({ code: 'custom', path: ['RAZORPAY_KEY_ID'], message: 'Razorpay keys are required when PAYMENT_PROVIDER=razorpay' });
     }

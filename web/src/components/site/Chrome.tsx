@@ -23,6 +23,18 @@ export function AnnouncementBar() {
   );
 }
 
+/**
+ * Always-on notice: this site is a portfolio concept of a real hotel, so every public page says so.
+ * Deliberately not CMS-editable or dismissible.
+ */
+export function ConceptNotice() {
+  return (
+    <div role="note" className="no-print relative z-50 bg-primary px-4 py-2 text-center text-[0.7rem] font-medium leading-snug tracking-[0.04em] text-ink">
+      Portfolio concept — not the official Rambagh Palace website and not affiliated with Taj Hotels or IHCL. No real bookings or payments are taken.
+    </div>
+  );
+}
+
 export function PreviewBanner() {
   const { preview } = useSite();
   if (!preview) return null;

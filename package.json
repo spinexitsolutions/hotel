@@ -2,7 +2,7 @@
   "name": "aurelle-hotel",
   "private": true,
   "version": "1.0.0",
-  "description": "Luxury hotel website, booking engine and admin platform (React + Express + PostgreSQL/Prisma).",
+  "description": "Rambagh Palace, Jaipur website concept: hotel website, booking engine and admin platform (React + Express + MongoDB/Prisma).",
   "workspaces": [
     "shared",
     "server",

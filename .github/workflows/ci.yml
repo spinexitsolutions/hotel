@@ -21,3 +21,25 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      # Smoke test: load the demo data into a fresh database, start the built site and check the main pages.
+      - name: Seed demo data and smoke-test the built site
+        env:
+          DATABASE_URL: mongodb://localhost:27017/hotel_smoke?replicaSet=rs0&directConnection=true
+          SESSION_SECRET: ci-smoke-session-secret-0123456789abcdef
+          SERVE_WEB: 'true'
+          PORT: '4100'
+        working-directory: server
+        run: |
+          npm run db:deploy
+          npm run db:seed
+          node dist/index.js > /tmp/server.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://localhost:4100/api/health > /dev/null && break; sleep 1; done
+          set -x
+          curl -sf http://localhost:4100/api/health
+          curl -sf http://localhost:4100/api/site | grep -q 'Rambagh Palace'
+          curl -sf http://localhost:4100/api/pages/home | grep -q 'The jewel of Jaipur'
+          test "$(curl -sf http://localhost:4100/api/rooms | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);console.log((j.items??j.rooms??j).length)})")" = 5
+          for path in / /rooms /rooms/royal-suite /dining /about /book /admin; do curl -sf "http://localhost:4100$path" | grep -q '<div id="root">'; done
+      - name: Server log
+        if: failure()
+        run: cat /tmp/server.log || true

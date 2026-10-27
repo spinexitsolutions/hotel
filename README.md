@@ -1,4 +1,11 @@
-# The Aurelle — Luxury Hotel Website, Booking Engine & Admin Platform
+# Rambagh Palace, Jaipur — Website Concept (Hotel Website, Booking Engine & Admin Platform)
+
+> **Portfolio concept.** This is a demo website built as a portfolio piece. It is **not** the official Rambagh Palace
+> website and is not affiliated with Rambagh Palace, Taj Hotels or IHCL. Rates, reviews and staff are illustrative;
+> photography and video are royalty-free stock, not images of the hotel. Every public page shows a notice saying so,
+> and `CONCEPT_DEMO=true` (the default) keeps payments on the sandbox provider, so no money can be taken.
+> Do not deploy it under the hotel's name or a domain that could be mistaken for the real hotel.
+
 
 A complete, production-ready platform for a five-star hotel:
 
@@ -56,11 +63,11 @@ Open http://localhost:5173 for the website and http://localhost:5173/admin for t
 
 | Role | Email | Password |
 |---|---|---|
-| Super Admin | admin@theaurelle.example | `Aurelle-Demo-2026` (or `SEED_STAFF_PASSWORD`) |
-| Hotel Manager | manager@theaurelle.example | same |
-| Booking Manager | reservations@theaurelle.example | same |
-| Receptionist | frontdesk@theaurelle.example | same |
-| Content Editor | editor@theaurelle.example | same |
+| Super Admin | admin@rambagh-concept.example | `Rambagh-Demo-2026` (or `SEED_STAFF_PASSWORD`) |
+| Hotel Manager | manager@rambagh-concept.example | same |
+| Booking Manager | reservations@rambagh-concept.example | same |
+| Receptionist | frontdesk@rambagh-concept.example | same |
+| Content Editor | editor@rambagh-concept.example | same |
 | Customer | ananya.sharma@example.com | `Guest-Demo-2026` |
 
 > These exist only in demo data. In production, run `npm run create-admin -- --email you@hotel.com --name "Your Name"` and create other staff from **Admin → Staff & roles**. There is no public admin registration.
