@@ -20,9 +20,9 @@ export const DEFAULT_PAGES: DefaultPage[] = [
     seo: seo('', '', IMG.exteriorDusk),
     sections: [
       { id: 'home-hero', type: 'hero', props: {
-        // Drop licensed footage into web/public/videos (see web/public/videos/README.md); until then the
-        // hero falls back to the poster and the slideshow below.
-        videoUrl: '/videos/hero-1080p.mp4', videoUrlMobile: '/videos/hero-720p.mp4', videoWebmUrl: '',
+        // Photo slideshow for now. To switch to a background video, add licensed footage to web/public/videos
+        // (see the README there) and set videoUrl, or paste a video URL in Admin → Pages → Home.
+        videoUrl: '', videoUrlMobile: '', videoWebmUrl: '',
         poster: IMG.exteriorDusk, focus: 'center', overlay: 45,
         slides: [
           { image: IMG.exteriorDusk, alt: 'A palace façade illuminated at dusk', eyebrow: 'Jaipur · Since 1835', heading: 'The jewel of Jaipur', subheading: 'A former royal residence set in 47 acres of Mughal gardens, where peacocks wander the lawns and the Pink City waits beyond the gates.' },
