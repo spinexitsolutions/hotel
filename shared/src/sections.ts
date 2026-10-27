@@ -45,8 +45,14 @@ const headingSchema = { eyebrow: str(80), heading: str(160), subheading: str(400
 export const SECTION_REGISTRY = {
   hero: {
     label: 'Cinematic hero',
-    description: 'Full-screen image slideshow with optional booking bar.',
+    description: 'Full-screen HD background video (or image slideshow) with rotating captions and optional booking bar.',
     schema: z.object({
+      videoUrl: lnk(),
+      videoUrlMobile: lnk(),
+      videoWebmUrl: lnk(),
+      poster: img(),
+      focus: z.enum(['center', 'top', 'bottom', 'left', 'right']).default('center'),
+      overlay: z.number().int().min(0).max(85).default(45),
       slides: z.array(z.object({ image: img(), alt: str(200), eyebrow: str(80), heading: str(160), subheading: str(300) })).min(1).max(6),
       showBookingBar: z.boolean().default(true),
       ctaLabel: str(40),
@@ -55,7 +61,15 @@ export const SECTION_REGISTRY = {
       interval: z.number().int().min(3).max(20).default(7),
     }),
     fields: [
-      { key: 'slides', label: 'Slides', type: 'list', itemLabel: 'Slide', max: 6, fields: [
+      { key: 'videoUrl', label: 'Background video (MP4, 1080p or 4K)', type: 'link', help: 'H.264 MP4, 1920×1080 or 3840×2160, 15–40 s, no audio. A path like /videos/hero-1080p.mp4 or a full https URL. Leave empty to use the image slideshow.' },
+      { key: 'videoUrlMobile', label: 'Mobile video (optional, lighter MP4)', type: 'link', help: 'Served on screens narrower than 768px, e.g. a 1280×720 encode. Falls back to the main video.' },
+      { key: 'videoWebmUrl', label: 'WebM version (optional)', type: 'link', help: 'VP9/AV1 WebM of the main video; smaller files for browsers that support it.' },
+      { key: 'poster', label: 'Poster image', type: 'image', help: 'Shown while the video loads, on Save-Data connections, with reduced motion, or if the video fails. Use the first frame of the video.' },
+      { key: 'focus', label: 'Video focal point', type: 'select', help: 'Which part of the frame stays visible when the screen crops it.', options: [
+        { value: 'center', label: 'Center' }, { value: 'top', label: 'Top' }, { value: 'bottom', label: 'Bottom' }, { value: 'left', label: 'Left' }, { value: 'right', label: 'Right' },
+      ] },
+      { key: 'overlay', label: 'Darkening overlay (%)', type: 'number', min: 0, max: 85, help: 'Keeps the headline readable over bright footage.' },
+      { key: 'slides', label: 'Slides / captions', type: 'list', itemLabel: 'Slide', max: 6, help: 'With a video, these captions rotate over it; without one, their images form the slideshow.', fields: [
         { key: 'image', label: 'Image', type: 'image' },
         { key: 'alt', label: 'Alt text', type: 'text' },
         { key: 'eyebrow', label: 'Eyebrow', type: 'text' },

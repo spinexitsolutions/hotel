@@ -35,6 +35,8 @@ export function createApp() {
           styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
           fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
           imgSrc: ["'self'", 'data:', 'blob:', 'https://images.unsplash.com', 'https://images.pexels.com', 'https://res.cloudinary.com', 'https://www.google-analytics.com'],
+          // Hero background videos: self-hosted (/videos, /uploads) or royalty-free CDNs.
+          mediaSrc: ["'self'", 'blob:', 'https://videos.pexels.com', 'https://player.vimeo.com', 'https://assets.mixkit.co', 'https://cdn.coverr.co', 'https://res.cloudinary.com'],
           connectSrc: ["'self'", 'https://lumberjack.razorpay.com', 'https://api.razorpay.com', 'https://www.google-analytics.com', 'https://*.analytics.google.com'],
           frameSrc: ["'self'", 'https://api.razorpay.com', 'https://checkout.razorpay.com', 'https://www.google.com', 'https://maps.google.com', 'https://www.youtube-nocookie.com'],
           workerSrc: ["'self'", 'blob:'],

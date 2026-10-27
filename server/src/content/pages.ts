@@ -20,6 +20,10 @@ export const DEFAULT_PAGES: DefaultPage[] = [
     seo: seo('', '', IMG.exteriorDusk),
     sections: [
       { id: 'home-hero', type: 'hero', props: {
+        // Drop licensed footage into web/public/videos (see web/public/videos/README.md); until then the
+        // hero falls back to the poster and the slideshow below.
+        videoUrl: '/videos/hero-1080p.mp4', videoUrlMobile: '/videos/hero-720p.mp4', videoWebmUrl: '',
+        poster: IMG.exteriorDusk, focus: 'center', overlay: 45,
         slides: [
           { image: IMG.exteriorDusk, alt: 'The palace façade illuminated at dusk', eyebrow: 'Udaipur · Since 1746', heading: 'A palace that floats on still water', subheading: 'Sixty-two rooms and suites, restored by hand, where the lake reflects the sky and time moves at its own pace.' },
           { image: IMG.infinityPool, alt: 'Infinity pool overlooking the water at golden hour', eyebrow: 'The Lake Pool', heading: 'Golden hour, every hour', subheading: 'An infinity pool suspended above the lake, with cabanas and attentive pool butlers.' },
