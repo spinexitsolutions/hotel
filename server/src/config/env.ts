@@ -38,6 +38,7 @@ const schema = z
     CLOUDINARY_API_SECRET: z.string().default(''),
 
     JOBS_ENABLED: z.enum(['true', 'false']).default('true'),
+    SEED_DEMO_ON_EMPTY: z.enum(['true', 'false']).default('false'),
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   })
   .superRefine((e, ctx) => {

@@ -1,0 +1,29 @@
+# Render Blueprint for the Rambagh Palace portfolio concept (https://render.com/docs/blueprint-spec).
+# One web service built from the Dockerfile; the database is MongoDB Atlas (free M0), whose URI you paste in.
+services:
+  - type: web
+    name: rambagh-palace-concept
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        sync: false # mongodb+srv://USER:PASSWORD@CLUSTER/hotel?retryWrites=true&w=majority
+      - key: APP_URL
+        sync: false # e.g. https://rambagh-palace-concept.onrender.com
+      - key: API_URL
+        sync: false # same as APP_URL
+      - key: SEED_STAFF_PASSWORD
+        sync: false # admin password for the demo staff accounts (admin@rambagh-concept.example)
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: SANDBOX_PAYMENT_SECRET
+        generateValue: true
+      - key: CONCEPT_DEMO
+        value: "true"
+      - key: PAYMENT_PROVIDER
+        value: sandbox
+      - key: EMAIL_PROVIDER
+        value: log
+      - key: SEED_DEMO_ON_EMPTY
+        value: "true"

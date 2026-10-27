@@ -1,5 +1,27 @@
 # Deployment, Integrations & Operations
 
+## Portfolio demo on Render (free)
+
+This repository is a **portfolio concept** of Rambagh Palace. Host it under your own name and domain (for example
+`rambagh-palace-concept.onrender.com`), never one that could pass for the real hotel. `render.yaml` keeps payments in
+sandbox mode (`CONCEPT_DEMO=true`) and every page shows the "not affiliated" notice.
+
+1. **Database:** create a free MongoDB Atlas M0 cluster. Add a database user, allow access from anywhere (`0.0.0.0/0`,
+   since Render's free plan has no fixed IP), and copy the `mongodb+srv://…` URI. Add `/hotel` as the database name
+   before the `?`.
+2. **Web service:** in Render choose **New → Blueprint**, connect this GitHub repository and select the branch. Render
+   reads `render.yaml` and asks for:
+   - `DATABASE_URL`: the Atlas URI.
+   - `APP_URL` and `API_URL`: the service URL Render shows, e.g. `https://rambagh-palace-concept.onrender.com`.
+     If you don't know it yet, deploy once, then set both and redeploy.
+   - `SEED_STAFF_PASSWORD`: the admin password you want for the demo staff accounts.
+3. On the first start the database is empty, so the server loads the demo data (`SEED_DEMO_ON_EMPTY=true`). It does
+   this only while the database has no users, and never touches existing data.
+4. Open the site, then sign in at `/admin` with `admin@rambagh-concept.example` and your `SEED_STAFF_PASSWORD`.
+
+The free plan sleeps after inactivity, so the first visit can take up to a minute. Uploaded images are lost on
+redeploys; use Cloudinary (`STORAGE_PROVIDER=cloudinary`) if you upload your own.
+
 ## Production checklist
 
 1. Provision **MongoDB 6+ as a replica set**. Prisma needs transactions, which standalone `mongod` doesn't support. MongoDB Atlas is the easiest; M0 is free, M10+ is for production. Other options are a self-hosted replica set or another provider. In Atlas, add a database user and allow your server's IP under Network Access. Then use the `mongodb+srv://…/hotel?retryWrites=true&w=majority` URI as `DATABASE_URL`.
