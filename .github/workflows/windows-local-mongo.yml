@@ -1,0 +1,41 @@
+# Tests scripts/setup-local-mongodb.ps1 and the local setup steps on Windows (branch-only check, not for main).
+name: Windows local MongoDB check
+on:
+  push:
+    branches: [claude/beautiful-heisenberg-6md6ar]
+    paths: ['scripts/**', '.github/workflows/windows-local-mongo.yml']
+  workflow_dispatch:
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - name: MongoDB service as installed (standalone)
+        shell: pwsh
+        run: |
+          Get-CimInstance Win32_Service | Where-Object { $_.Name -like 'MongoDB*' } | Format-List Name, State, StartMode, PathName
+          $svc = Get-Service | Where-Object { $_.Name -like 'MongoDB*' } | Select-Object -First 1
+          Set-Service -Name $svc.Name -StartupType Automatic
+          Start-Service -Name $svc.Name
+          Get-Command mongosh -ErrorAction SilentlyContinue | Format-List Source
+      - name: Run the setup script
+        shell: pwsh
+        run: ./scripts/setup-local-mongodb.ps1
+      - name: Replica set status
+        shell: pwsh
+        run: mongosh --quiet --eval "rs.status().ok"
+      - name: Project setup like the guide (copy .env.example, deploy, seed, start)
+        shell: pwsh
+        run: |
+          npm ci
+          Copy-Item .env.example server\.env
+          npm run db:deploy
+          npm run db:seed
+          $p = Start-Process -FilePath npm.cmd -ArgumentList 'run','dev','-w','server' -PassThru -NoNewWindow
+          for ($i = 0; $i -lt 40; $i++) { try { $r = Invoke-RestMethod http://localhost:4000/api/health; if ($r.ok) { break } } catch {} ; Start-Sleep 2 }
+          $r | ConvertTo-Json
+          $site = Invoke-RestMethod http://localhost:4000/api/site
+          if (($site | ConvertTo-Json -Depth 10) -notmatch 'Rambagh Palace') { throw 'site config missing' }
+          Write-Host 'API is up with the Rambagh demo data.'
