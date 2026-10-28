@@ -29,7 +29,8 @@ export async function seedDemo({ allowProduction = process.env.SEED_ALLOW_PRODUC
   if (process.env.NODE_ENV === 'production' && !allowProduction) throw new Error('Refusing to wipe a production database. Set SEED_ALLOW_PRODUCTION=yes if you really mean it.');
   // The development default is published in the README, so a hosted demo must choose its own admin password.
   if (process.env.NODE_ENV === 'production' && !process.env.SEED_STAFF_PASSWORD) throw new Error('Set SEED_STAFF_PASSWORD before loading demo data in production.');
-  const staffPassword = process.env.SEED_STAFF_PASSWORD ?? 'Rambagh-Demo-2026';
+  // `||`, not `??`: .env.example ships an empty SEED_STAFF_PASSWORD=, which must still mean "use the default".
+  const staffPassword = process.env.SEED_STAFF_PASSWORD || 'Rambagh-Demo-2026';
   console.log('🧹 wiping database…');
   await wipe();
 
