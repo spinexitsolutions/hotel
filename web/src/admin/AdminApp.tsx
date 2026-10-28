@@ -163,7 +163,7 @@ export default function AdminApp() {
   const sidebar = (
     <nav className="flex h-full flex-col" aria-label="Admin">
       <div className="flex h-16 items-center gap-3 border-b border-white/10 px-5">
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-600/90 font-serif text-lg text-white">A</span>
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-600/90 font-serif text-lg text-white">R</span>
         <div><p className="text-sm font-semibold text-white">Rambagh Palace</p><p className="text-[11px] text-zinc-400">Hotel management</p></div>
       </div>
       <div className="flex-1 overflow-y-auto px-3 py-4">
