@@ -3,7 +3,7 @@ name: Windows local MongoDB check
 on:
   push:
     branches: [claude/beautiful-heisenberg-6md6ar]
-    paths: ['scripts/**', '.github/workflows/windows-local-mongo.yml']
+    paths: ['scripts/**', 'server/src/scripts/**', '.github/workflows/windows-local-mongo.yml']
   workflow_dispatch:
 jobs:
   windows:
@@ -39,3 +39,10 @@ jobs:
           $site = Invoke-RestMethod http://localhost:4000/api/site
           if (($site | ConvertTo-Json -Depth 10) -notmatch 'Rambagh Palace') { throw 'site config missing' }
           Write-Host 'API is up with the Rambagh demo data.'
+          # Sign in as the demo admin exactly as the guide says (with the .env copied from .env.example).
+          $ws = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+          $csrf = (Invoke-RestMethod http://localhost:4000/api/csrf -WebSession $ws).token
+          $body = @{ email = 'admin@rambagh-concept.example'; password = 'Rambagh-Demo-2026' } | ConvertTo-Json
+          $login = Invoke-RestMethod http://localhost:4000/api/auth/login -Method Post -WebSession $ws -ContentType 'application/json' -Headers @{ 'X-CSRF-Token' = $csrf } -Body $body
+          $login | ConvertTo-Json -Depth 4
+          Write-Host 'Admin login with Rambagh-Demo-2026 works.'
